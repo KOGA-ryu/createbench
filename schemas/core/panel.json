@@ -1,0 +1,19 @@
+{
+  "type": "panel",
+  "version": 1,
+  "display_name": "Panel",
+  "category": "region",
+  "extends": "container",
+  "layout": true,
+  "allowed_children": [
+    "@layout",
+    "@component"
+  ],
+  "properties": {
+    "title": {
+      "type": "string",
+      "default": "Panel",
+      "group": "content"
+    }
+  }
+}

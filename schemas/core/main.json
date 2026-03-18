@@ -1,0 +1,19 @@
+{
+  "type": "main",
+  "version": 1,
+  "display_name": "Main Area",
+  "category": "region",
+  "extends": "container",
+  "layout": true,
+  "allowed_children": [
+    "@layout",
+    "@component"
+  ],
+  "properties": {
+    "title": {
+      "type": "string",
+      "default": "Main",
+      "group": "content"
+    }
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "type": "container",
+  "version": 1,
+  "display_name": "Container",
+  "category": "layout",
+  "layout": true,
+  "allowed_children": [
+    "@layout",
+    "@region",
+    "@component"
+  ],
+  "properties": {
+    "width": {
+      "type": "int",
+      "default": 300,
+      "group": "layout"
+    },
+    "height": {
+      "type": "int",
+      "default": 200,
+      "group": "layout"
+    }
+  }
+}

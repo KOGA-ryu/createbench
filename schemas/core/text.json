@@ -1,0 +1,16 @@
+{
+  "type": "text",
+  "version": 1,
+  "display_name": "Text",
+  "category": "component",
+  "layout": false,
+  "allowed_children": [],
+  "properties": {
+    "value": {
+      "type": "string",
+      "default": "Text",
+      "required": true,
+      "group": "content"
+    }
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "type": "input",
+  "version": 1,
+  "display_name": "Input",
+  "category": "component",
+  "layout": false,
+  "allowed_children": [],
+  "properties": {
+    "placeholder": {
+      "type": "string",
+      "default": "Enter text",
+      "group": "content"
+    }
+  }
+}

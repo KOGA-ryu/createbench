@@ -1,0 +1,19 @@
+{
+  "type": "document",
+  "version": 1,
+  "display_name": "Document",
+  "category": "layout",
+  "layout": true,
+  "allowed_children": [
+    "container",
+    "vertical",
+    "horizontal",
+    "sidebar",
+    "main",
+    "panel",
+    "button",
+    "text",
+    "input"
+  ],
+  "properties": {}
+}

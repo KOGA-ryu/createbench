@@ -1,0 +1,16 @@
+{
+  "type": "button",
+  "version": 1,
+  "display_name": "Button",
+  "category": "component",
+  "layout": false,
+  "allowed_children": [],
+  "properties": {
+    "text": {
+      "type": "string",
+      "default": "Button",
+      "required": true,
+      "group": "content"
+    }
+  }
+}

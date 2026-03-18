@@ -1,0 +1,24 @@
+{
+  "basic_layout": {
+    "type": "container",
+    "children": [
+      {
+        "type": "sidebar"
+      },
+      {
+        "type": "main"
+      }
+    ]
+  },
+  "vertical_stack": {
+    "type": "vertical",
+    "children": [
+      {
+        "type": "text"
+      },
+      {
+        "type": "button"
+      }
+    ]
+  }
+}

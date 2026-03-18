@@ -1,0 +1,19 @@
+{
+  "type": "sidebar",
+  "version": 1,
+  "display_name": "Sidebar",
+  "category": "region",
+  "extends": "container",
+  "layout": true,
+  "allowed_children": [
+    "@layout",
+    "@component"
+  ],
+  "properties": {
+    "title": {
+      "type": "string",
+      "default": "Sidebar",
+      "group": "content"
+    }
+  }
+}
