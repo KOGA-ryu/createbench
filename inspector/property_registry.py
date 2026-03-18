@@ -48,6 +48,10 @@ class PropertyRegistry:
             if key not in result:
                 result[key] = value
 
+        for key in ("x", "y", "width", "height", "layout_mode"):
+            if key not in result and key in schema["properties"] and "default" in schema["properties"][key]:
+                result[key] = deepcopy(schema["properties"][key]["default"])
+
         return result
 
     def _load_all(self) -> None:

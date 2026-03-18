@@ -14,7 +14,17 @@ def create_node_basic():
     assert node.id == "button_1"
     assert node.type == "button"
     assert node.name is None
-    assert node.properties == {"text": "Save"}
+    assert node.properties["text"] == "Save"
+    assert node.properties["x"] == 0
+    assert node.properties["y"] == 0
+    assert node.properties["width"] == 200
+    assert node.properties["height"] == 100
+    assert node.properties["min_width"] == 50
+    assert node.properties["min_height"] == 30
+    assert node.properties["max_width"] is None
+    assert node.properties["max_height"] is None
+    assert node.properties["layout_mode"] == "free"
+    assert node.properties["locked"] is False
     assert node.children == []
     assert node.parent_id == "root"
 
@@ -63,13 +73,19 @@ def to_dict_structure():
     )
     node.add_child("ignored_child")
     data = node.to_dict()
-    assert data == {
-        "id": "button_1",
-        "type": "button",
-        "name": "Primary Save",
-        "properties": {"text": "Save"},
-        "children": ["ignored_child"],
-    }
+    assert data["id"] == "button_1"
+    assert data["type"] == "button"
+    assert data["name"] == "Primary Save"
+    assert data["children"] == ["ignored_child"]
+    assert data["properties"]["text"] == "Save"
+    assert data["properties"]["x"] == 0
+    assert data["properties"]["y"] == 0
+    assert data["properties"]["width"] == 200
+    assert data["properties"]["height"] == 100
+    assert data["properties"]["min_width"] == 50
+    assert data["properties"]["min_height"] == 30
+    assert data["properties"]["max_width"] is None
+    assert data["properties"]["max_height"] is None
 
 
 def run_all_tests():

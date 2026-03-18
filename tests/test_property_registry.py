@@ -189,6 +189,16 @@ def test_default_injection():
     registry = make_registry()
     props = registry.apply_defaults("button", {})
     assert props["text"] == "Button"
+    assert props["x"] == 0
+    assert props["y"] == 0
+    assert props["width"] == 200
+    assert props["height"] == 100
+    assert props["min_width"] == 50
+    assert props["min_height"] == 30
+    assert props["max_width"] is None
+    assert props["max_height"] is None
+    assert props["layout_mode"] == "free"
+    assert props["locked"] is False
 
 
 def test_unknown_property_preserved():

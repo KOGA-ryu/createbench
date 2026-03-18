@@ -95,6 +95,7 @@ class InspectorPanel(QWidget):
     def _decorate_schema_field(self, field, prop_name, prop_schema, inherited, node):
         label = field.findChild(QLabel, f"field_label_{prop_name}")
         value = node.properties.get(prop_name)
+        locked = bool(node.properties.get("locked"))
         if label is not None:
             label_text = prop_name
             if prop_schema.get("required"):
@@ -115,6 +116,12 @@ class InspectorPanel(QWidget):
                 input_widget.setStyleSheet("border: 1px solid #dc2626;")
             else:
                 input_widget.setStyleSheet("")
+            if locked and prop_name in {"x", "y", "width", "height", "layout_mode"}:
+                input_widget.setEnabled(False)
+                field.reset_button.setEnabled(False)
+            else:
+                input_widget.setEnabled(True)
+                field.reset_button.setEnabled(True)
 
         default_value = prop_schema.get("default", None)
         self._wire_reset_button(field.reset_button, default_value, field, prop_name, node)
@@ -154,6 +161,8 @@ class InspectorPanel(QWidget):
     def _commit_property(self, node, prop_name, value):
         node.properties = dict(node.properties)
         node.properties[prop_name] = value
+        if prop_name == "locked":
+            self._on_selection_changed(node.id)
 
     def _remove_unknown_property(self, node, prop_name):
         node.properties = dict(node.properties)
@@ -165,6 +174,7 @@ class InspectorPanel(QWidget):
             item = self.content_layout.takeAt(0)
             widget = item.widget()
             if widget is not None:
+                widget.setParent(None)
                 widget.deleteLater()
 
     def _is_invalid_value(self, prop_schema, value):

@@ -1,23 +1,131 @@
 {
-  "basic_layout": {
-    "type": "container",
+  "app_shell": {
+    "type": "document",
+    "properties": {
+      "title": "Application",
+      "layout_mode": "auto"
+    },
     "children": [
       {
-        "type": "sidebar"
+        "type": "toolbar",
+        "properties": {
+          "title": "Toolbar",
+          "layout_mode": "auto"
+        }
       },
       {
-        "type": "main"
+        "type": "horizontal",
+        "properties": {
+          "layout_mode": "auto"
+        },
+        "children": [
+          {
+            "type": "sidebar",
+            "properties": {
+              "title": "Sidebar",
+              "layout_mode": "auto"
+            }
+          },
+          {
+            "type": "main",
+            "properties": {
+              "title": "Main",
+              "layout_mode": "auto"
+            }
+          }
+        ]
       }
     ]
   },
-  "vertical_stack": {
-    "type": "vertical",
+  "dashboard": {
+    "type": "document",
+    "properties": {
+      "title": "Dashboard",
+      "layout_mode": "auto"
+    },
     "children": [
       {
-        "type": "text"
+        "type": "toolbar",
+        "properties": {
+          "title": "Toolbar",
+          "layout_mode": "auto"
+        }
       },
       {
-        "type": "button"
+        "type": "horizontal",
+        "properties": {
+          "layout_mode": "auto"
+        },
+        "children": [
+          {
+            "type": "sidebar",
+            "properties": {
+              "title": "Sidebar",
+              "layout_mode": "auto"
+            }
+          },
+          {
+            "type": "vertical",
+            "properties": {
+              "layout_mode": "auto"
+            },
+            "children": [
+              {
+                "type": "panel",
+                "properties": {
+                  "title": "Panel A",
+                  "layout_mode": "auto"
+                }
+              },
+              {
+                "type": "panel",
+                "properties": {
+                  "title": "Panel B",
+                  "layout_mode": "auto"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "form_layout": {
+    "type": "document",
+    "properties": {
+      "title": "Form Layout",
+      "layout_mode": "auto"
+    },
+    "children": [
+      {
+        "type": "vertical",
+        "properties": {
+          "layout_mode": "auto"
+        },
+        "children": [
+          {
+            "type": "text",
+            "properties": {
+              "value": "Form Title",
+              "layout_mode": "auto"
+            }
+          },
+          {
+            "type": "input",
+            "properties": {
+              "placeholder": "Enter value",
+              "layout_mode": "auto"
+            }
+          },
+          {
+            "type": "button",
+            "properties": {
+              "text": "Submit",
+              "title": "Submit",
+              "layout_mode": "auto"
+            }
+          }
+        ]
       }
     ]
   }

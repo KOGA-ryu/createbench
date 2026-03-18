@@ -1,0 +1,42 @@
+{
+  "type": "main",
+  "display_name": "Main",
+  "description": "A primary content region for the main working area.",
+  "traits": {
+    "title": {
+      "type": "string",
+      "default": "Main",
+      "description": "Human-readable title shown on canvas and export."
+    },
+    "layout_mode": {
+      "type": "enum",
+      "allowed_values": ["auto", "free"],
+      "default": "auto",
+      "description": "Whether the node follows parent layout or uses explicit geometry."
+    },
+    "locked": {
+      "type": "bool",
+      "default": false,
+      "description": "If true, the node cannot move or resize."
+    },
+    "description": {
+      "type": "string",
+      "default": "",
+      "description": "What this component is for."
+    },
+    "behavior": {
+      "type": "string",
+      "default": "",
+      "description": "What this component does."
+    },
+    "interactions": {
+      "type": "string",
+      "default": "",
+      "description": "How this component interacts with others."
+    }
+  },
+  "display_rules": {
+    "preferred_width": 800,
+    "preferred_height": 600
+  }
+}

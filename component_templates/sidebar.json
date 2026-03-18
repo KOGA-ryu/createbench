@@ -1,0 +1,47 @@
+{
+  "type": "sidebar",
+  "display_name": "Sidebar",
+  "description": "A navigation or utility region typically docked to one side.",
+  "traits": {
+    "title": {
+      "type": "string",
+      "default": "Sidebar",
+      "description": "Human-readable title shown on canvas and export."
+    },
+    "width": {
+      "type": "int",
+      "default": 240,
+      "description": "Preferred width of the sidebar."
+    },
+    "layout_mode": {
+      "type": "enum",
+      "allowed_values": ["auto", "free"],
+      "default": "auto",
+      "description": "Whether the node follows parent layout or uses explicit geometry."
+    },
+    "locked": {
+      "type": "bool",
+      "default": false,
+      "description": "If true, the node cannot move or resize."
+    },
+    "description": {
+      "type": "string",
+      "default": "",
+      "description": "What this component is for."
+    },
+    "behavior": {
+      "type": "string",
+      "default": "",
+      "description": "What this component does."
+    },
+    "interactions": {
+      "type": "string",
+      "default": "",
+      "description": "How this component interacts with others."
+    }
+  },
+  "display_rules": {
+    "preferred_width": 240,
+    "preferred_height": 600
+  }
+}

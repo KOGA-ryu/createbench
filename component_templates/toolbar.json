@@ -1,0 +1,47 @@
+{
+  "type": "panel",
+  "display_name": "Toolbar",
+  "description": "A compact control strip for commands and quick actions.",
+  "traits": {
+    "title": {
+      "type": "string",
+      "default": "Toolbar",
+      "description": "Human-readable title shown on canvas and export."
+    },
+    "height": {
+      "type": "int",
+      "default": 64,
+      "description": "Preferred height of the toolbar."
+    },
+    "layout_mode": {
+      "type": "enum",
+      "allowed_values": ["auto", "free"],
+      "default": "auto",
+      "description": "Whether the node follows parent layout or uses explicit geometry."
+    },
+    "locked": {
+      "type": "bool",
+      "default": false,
+      "description": "If true, the node cannot move or resize."
+    },
+    "description": {
+      "type": "string",
+      "default": "",
+      "description": "What this component is for."
+    },
+    "behavior": {
+      "type": "string",
+      "default": "",
+      "description": "What this component does."
+    },
+    "interactions": {
+      "type": "string",
+      "default": "",
+      "description": "How this component interacts with others."
+    }
+  },
+  "display_rules": {
+    "preferred_width": 1200,
+    "preferred_height": 64
+  }
+}

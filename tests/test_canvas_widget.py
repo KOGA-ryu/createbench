@@ -70,10 +70,10 @@ def click_selects_node():
 
 def layout_respects_children_count():
     canvas, model, _selection = make_canvas()
-    document = model.create_node("document", {})
-    top = model.create_node("button", {})
-    middle = model.create_node("text", {})
-    bottom = model.create_node("input", {})
+    document = model.create_node("document", {"layout_mode": "auto"})
+    top = model.create_node("button", {"layout_mode": "auto"})
+    middle = model.create_node("text", {"layout_mode": "auto"})
+    bottom = model.create_node("input", {"layout_mode": "auto"})
     model.add_node(model.root_id, document)
     model.add_node(document.id, top)
     model.add_node(document.id, middle)
@@ -116,12 +116,44 @@ def selection_updates_on_click():
     assert updates[-1] == panel.id
 
 
+def click_selects_topmost_overlapping_node():
+    canvas, model, selection = make_canvas()
+    document = model.create_node("document", {"layout_mode": "auto"})
+    lower = model.create_node(
+        "panel",
+        {"layout_mode": "free", "x": 40, "y": 40, "width": 200, "height": 160},
+    )
+    upper = model.create_node(
+        "button",
+        {"layout_mode": "free", "x": 80, "y": 80, "width": 120, "height": 80},
+    )
+    model.add_node(model.root_id, document)
+    model.add_node(document.id, lower)
+    model.add_node(document.id, upper)
+
+    canvas.show()
+    canvas.repaint()
+    APP.processEvents()
+
+    point = canvas.node_rects[upper.id].center()
+    event = QMouseEvent(
+        QMouseEvent.Type.MouseButtonPress,
+        QPointF(point),
+        Qt.MouseButton.LeftButton,
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier,
+    )
+    canvas.mousePressEvent(event)
+    assert selection.get_selection() == upper.id
+
+
 def run_all_tests():
     tests = [
         render_creates_node_rects,
         click_selects_node,
         layout_respects_children_count,
         selection_updates_on_click,
+        click_selects_topmost_overlapping_node,
     ]
 
     passed = 0

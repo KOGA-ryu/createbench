@@ -18,6 +18,20 @@ class Node:
         self.type = type
         self.name = name
         self.properties = dict(properties)
+        self.properties.setdefault("x", 0)
+        self.properties.setdefault("y", 0)
+        self.properties.setdefault("width", 200)
+        self.properties.setdefault("height", 100)
+        self.properties.setdefault("min_width", 50)
+        self.properties.setdefault("min_height", 30)
+        self.properties.setdefault("max_width", None)
+        self.properties.setdefault("max_height", None)
+        self.properties.setdefault("layout_mode", "free")
+        self.properties.setdefault("locked", False)
+        self.properties.setdefault("title", "")
+        self.properties.setdefault("description", "")
+        self.properties.setdefault("behavior", "")
+        self.properties.setdefault("interactions", "")
         self.children: list[str] = []
         self.parent_id = parent_id
 

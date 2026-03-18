@@ -37,7 +37,7 @@ def rule_invalid_property_type(node, schema) -> list[dict]:
         if not prop_def:
             continue
         expected_type = prop_def.get("type")
-        if not _matches_type(expected_type, value):
+        if not _matches_type(expected_type, value, prop_def):
             issues.append(
                 _issue(
                     node.id,
@@ -153,7 +153,9 @@ def rule_excessive_depth(node, depth: int) -> list[dict]:
     return []
 
 
-def _matches_type(expected_type: str, value: Any) -> bool:
+def _matches_type(expected_type: str, value: Any, prop_def: dict[str, Any] | None = None) -> bool:
+    if value is None:
+        return prop_def is not None and prop_def.get("default") is None
     if expected_type == "int":
         return isinstance(value, int) and not isinstance(value, bool)
     if expected_type == "float":

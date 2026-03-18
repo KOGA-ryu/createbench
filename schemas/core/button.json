@@ -6,6 +6,80 @@
   "layout": false,
   "allowed_children": [],
   "properties": {
+    "x": {
+      "type": "int",
+      "default": 0,
+      "group": "layout"
+    },
+    "y": {
+      "type": "int",
+      "default": 0,
+      "group": "layout"
+    },
+    "width": {
+      "type": "int",
+      "default": 200,
+      "group": "layout"
+    },
+    "height": {
+      "type": "int",
+      "default": 100,
+      "group": "layout"
+    },
+    "min_width": {
+      "type": "int",
+      "default": 50,
+      "group": "layout"
+    },
+    "min_height": {
+      "type": "int",
+      "default": 30,
+      "group": "layout"
+    },
+    "max_width": {
+      "type": "int",
+      "default": null,
+      "group": "layout"
+    },
+    "max_height": {
+      "type": "int",
+      "default": null,
+      "group": "layout"
+    },
+    "layout_mode": {
+      "type": "enum",
+      "allowed_values": [
+        "auto",
+        "free"
+      ],
+      "default": "free",
+      "group": "layout"
+    },
+    "locked": {
+      "type": "bool",
+      "default": false,
+      "group": "behavior"
+    },
+    "title": {
+      "type": "string",
+      "default": "",
+      "group": "content"
+    },
+    "description": {
+      "type": "string",
+      "default": "",
+      "group": "content"
+    },
+    "behavior": {
+      "type": "string",
+      "default": "",
+      "group": "behavior"
+    },
+    "interactions": {
+      "type": "string",
+      "default": "",
+      "group": "behavior"
+    },
     "text": {
       "type": "string",
       "default": "Button",

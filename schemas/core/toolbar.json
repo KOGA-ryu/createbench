@@ -1,0 +1,23 @@
+{
+  "type": "toolbar",
+  "version": 1,
+  "display_name": "Toolbar",
+  "category": "region",
+  "extends": "panel",
+  "layout": true,
+  "allowed_children": [
+    "@component"
+  ],
+  "properties": {
+    "title": {
+      "type": "string",
+      "default": "Toolbar",
+      "group": "content"
+    },
+    "height": {
+      "type": "int",
+      "default": 64,
+      "group": "layout"
+    }
+  }
+}

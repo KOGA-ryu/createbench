@@ -54,6 +54,17 @@ def invalid_type_detected():
     assert "invalid_property_type" in issue_codes(result)
 
 
+def nullable_int_property_allowed():
+    engine, model = make_engine()
+    document = model.create_node("document", {})
+    button = model.create_node("button", {"max_width": None, "max_height": None})
+    model.add_node(model.root_id, document)
+    model.add_node(document.id, button)
+
+    result = engine.run()
+    assert "invalid_property_type" not in issue_codes(result)
+
+
 def constraint_violation_detected():
     with tempfile.TemporaryDirectory() as tmp:
         user_dir = Path(tmp)
@@ -181,6 +192,7 @@ def run_all_tests():
     tests = [
         missing_required_property_detected,
         invalid_type_detected,
+        nullable_int_property_allowed,
         constraint_violation_detected,
         invalid_child_detected,
         unknown_property_warning,

@@ -6,10 +6,12 @@ from pathlib import Path
 from canvas.canvas_widget import CanvasWidget
 from checklist.checklist_panel import ChecklistPanel
 from export.dsl_builder import DSLBuilder
+from forms.component_form_builder import ComponentFormBuilder
 from inspector.inspector_panel import InspectorPanel
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QComboBox,
+    QHBoxLayout,
     QMainWindow,
     QPushButton,
     QSplitter,
@@ -54,17 +56,46 @@ class MainWindow(QMainWindow):
         self.load_button.clicked.connect(self._handle_load)
 
         self.template_data = self._load_templates()
+        self.component_form_builder = ComponentFormBuilder(
+            Path(__file__).resolve().parents[1] / "component_templates"
+        )
         self.template_selector = QComboBox()
         for name in self.template_data:
             self.template_selector.addItem(name)
-        self.template_button = QPushButton("Add Template")
+        self.template_button = QPushButton("Apply Template")
         self.template_button.clicked.connect(self._handle_add_template)
+        self.replace_template_button = QPushButton("Replace With Template")
+        self.replace_template_button.clicked.connect(self._handle_replace_with_template)
+        self.component_selector = QComboBox()
+        for component_name in self.component_form_builder.list_components():
+            self.component_selector.addItem(component_name)
+        self.new_component_button = QPushButton("New Component")
+        self.new_component_button.clicked.connect(self._show_component_form)
+        self.add_child_button = QPushButton("Add Child")
+        self.add_child_button.clicked.connect(canvas_panel.add_child_to_selected)
+        self.delete_button = QPushButton("Delete")
+        self.delete_button.clicked.connect(canvas_panel.delete_selected)
 
         canvas_container = QWidget()
         canvas_layout = QVBoxLayout(canvas_container)
         canvas_layout.setContentsMargins(0, 0, 0, 0)
+        toolbar_layout = QHBoxLayout()
+        toolbar_layout.setContentsMargins(0, 0, 0, 0)
+        toolbar_layout.addWidget(self.add_child_button)
+        toolbar_layout.addWidget(self.delete_button)
+        component_layout = QHBoxLayout()
+        component_layout.setContentsMargins(0, 0, 0, 0)
+        component_layout.addWidget(self.component_selector)
+        component_layout.addWidget(self.new_component_button)
+        self.component_form_container = QWidget()
+        self.component_form_layout = QVBoxLayout(self.component_form_container)
+        self.component_form_layout.setContentsMargins(0, 0, 0, 0)
         canvas_layout.addWidget(self.template_selector)
         canvas_layout.addWidget(self.template_button)
+        canvas_layout.addWidget(self.replace_template_button)
+        canvas_layout.addLayout(toolbar_layout)
+        canvas_layout.addLayout(component_layout)
+        canvas_layout.addWidget(self.component_form_container)
         canvas_layout.addWidget(canvas_panel)
 
         checklist_container = QWidget()
@@ -110,7 +141,15 @@ class MainWindow(QMainWindow):
         template = self.template_data.get(template_name)
         if template is None:
             return
-        self.canvas_panel.apply_template(template, self.app_state.layout_model.root_id)
+        self.canvas_panel.apply_template(template, replace_root=False)
+        self.checklist_panel.update_checklist()
+
+    def _handle_replace_with_template(self):
+        template_name = self.template_selector.currentText()
+        template = self.template_data.get(template_name)
+        if template is None:
+            return
+        self.canvas_panel.apply_template(template, replace_root=True)
         self.checklist_panel.update_checklist()
 
     def _handle_save(self):
@@ -127,6 +166,24 @@ class MainWindow(QMainWindow):
         self.canvas_panel.update()
         self.checklist_panel.update_checklist()
         print("Project loaded")
+
+    def _show_component_form(self):
+        component_type = self.component_selector.currentText()
+        self._clear_component_form()
+        form = self.component_form_builder.build_form(component_type, self._handle_component_submit)
+        self.component_form_layout.addWidget(form)
+
+    def _handle_component_submit(self, payload):
+        self.canvas_panel.create_component_node(payload["type"], payload["properties"])
+        self.checklist_panel.update_checklist()
+
+    def _clear_component_form(self):
+        while self.component_form_layout.count():
+            item = self.component_form_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.setParent(None)
+                widget.deleteLater()
 
     def _load_templates(self):
         templates_path = Path(__file__).resolve().parents[1] / "templates" / "templates.json"
