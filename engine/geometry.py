@@ -68,10 +68,20 @@ def detect_resize_handle(
     top = normalized["y"]
     bottom = normalized["y"] + normalized["height"]
 
+    if left <= px <= left + handle_size and top <= py <= top + handle_size:
+        return "top_left"
+    if right - handle_size <= px <= right and top <= py <= top + handle_size:
+        return "top_right"
+    if left <= px <= left + handle_size and bottom - handle_size <= py <= bottom:
+        return "bottom_left"
     if right - handle_size <= px <= right and bottom - handle_size <= py <= bottom:
         return "bottom_right"
+    if left <= px <= left + handle_size and top <= py <= bottom:
+        return "left"
     if right - handle_size <= px <= right and top <= py <= bottom:
         return "right"
+    if left <= px <= right and top <= py <= top + handle_size:
+        return "top"
     if left <= px <= right and bottom - handle_size <= py <= bottom:
         return "bottom"
     return None
@@ -92,10 +102,31 @@ def apply_resize(
     y = normalized["y"]
     width = normalized["width"]
     height = normalized["height"]
+    right = x + width
+    bottom = y + height
 
-    if handle == "right":
+    if handle == "left":
+        width = clamp(right - (x + dx), min_width, max_width)
+        x = right - width
+    elif handle == "right":
         width = clamp(width + dx, min_width, max_width)
+    elif handle == "top":
+        height = clamp(bottom - (y + dy), min_height, max_height)
+        y = bottom - height
     elif handle == "bottom":
+        height = clamp(height + dy, min_height, max_height)
+    elif handle == "top_left":
+        width = clamp(right - (x + dx), min_width, max_width)
+        x = right - width
+        height = clamp(bottom - (y + dy), min_height, max_height)
+        y = bottom - height
+    elif handle == "top_right":
+        width = clamp(width + dx, min_width, max_width)
+        height = clamp(bottom - (y + dy), min_height, max_height)
+        y = bottom - height
+    elif handle == "bottom_left":
+        width = clamp(right - (x + dx), min_width, max_width)
+        x = right - width
         height = clamp(height + dy, min_height, max_height)
     elif handle == "bottom_right":
         width = clamp(width + dx, min_width, max_width)

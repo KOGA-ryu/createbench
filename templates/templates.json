@@ -128,5 +128,353 @@
         ]
       }
     ]
+  },
+  "createbench_ui": {
+    "type": "document",
+    "properties": {
+      "title": "Create Bench UI",
+      "layout_mode": "free",
+      "description": "Visual communication model of the current Create Bench interface.",
+      "x": 24,
+      "y": 24,
+      "width": 1380,
+      "height": 860
+    },
+    "children": [
+      {
+        "type": "panel",
+        "properties": {
+          "title": "Canvas Rail",
+          "layout_mode": "free",
+          "x": 56,
+          "y": 80,
+          "width": 272,
+          "height": 520
+        },
+        "children": [
+          {
+            "type": "panel",
+            "properties": {
+              "title": "Templates",
+              "layout_mode": "auto",
+              "behavior": "template scaffold selection",
+              "interactions": "apply or replace project scaffold",
+              "width": 248,
+              "height": 180
+            },
+            "children": [
+              {
+                "type": "input",
+                "properties": {
+                  "title": "Template Selector",
+                  "placeholder": "app_shell | dashboard | form_layout | createbench_ui",
+                  "description": "Represents the template dropdown near the top of the app.",
+                  "layout_mode": "auto",
+                  "width": 220
+                }
+              },
+              {
+                "type": "button",
+                "properties": {
+                  "text": "Apply Template",
+                  "title": "Apply Template",
+                  "behavior": "apply selected scaffold",
+                  "layout_mode": "auto",
+                  "width": 220
+                }
+              },
+              {
+                "type": "button",
+                "properties": {
+                  "text": "Replace With Template",
+                  "title": "Replace With Template",
+                  "behavior": "clear root and apply selected scaffold",
+                  "layout_mode": "auto",
+                  "width": 220
+                }
+              }
+            ]
+          },
+          {
+            "type": "panel",
+            "properties": {
+              "title": "Structure Actions",
+              "layout_mode": "auto",
+              "behavior": "structural editing",
+              "width": 248,
+              "height": 132
+            },
+            "children": [
+              {
+                "type": "button",
+                "properties": {
+                  "text": "Add Child",
+                  "title": "Add Child",
+                  "behavior": "append child to selected node",
+                  "layout_mode": "auto"
+                }
+              },
+              {
+                "type": "button",
+                "properties": {
+                  "text": "Delete",
+                  "title": "Delete",
+                  "behavior": "delete selected node",
+                  "layout_mode": "auto"
+                }
+              }
+            ]
+          },
+          {
+            "type": "panel",
+            "properties": {
+              "title": "Component Creator",
+              "layout_mode": "auto",
+              "behavior": "component form initiation",
+              "width": 248,
+              "height": 140
+            },
+            "children": [
+              {
+                "type": "input",
+                "properties": {
+                  "title": "Component Selector",
+                  "placeholder": "button | main | panel | sidebar | toolbar",
+                  "description": "Represents the component type dropdown.",
+                  "layout_mode": "auto",
+                  "width": 220
+                }
+              },
+              {
+                "type": "button",
+                "properties": {
+                  "text": "New Component",
+                  "title": "New Component",
+                  "behavior": "open generated component form",
+                  "layout_mode": "auto"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "panel",
+        "properties": {
+          "title": "Canvas",
+          "layout_mode": "free",
+          "description": "The main visual editing surface where nodes are arranged.",
+          "x": 372,
+          "y": 72,
+          "width": 620,
+          "height": 640
+        }
+      },
+      {
+        "type": "panel",
+        "properties": {
+          "title": "Tool Workspace",
+          "layout_mode": "free",
+          "description": "Floating tool workspace for property editing and validation.",
+          "ui_role": "tool_window",
+          "x": 1036,
+          "y": 96,
+          "width": 320,
+          "height": 520
+        },
+        "children": [
+          {
+            "type": "panel",
+            "properties": {
+              "title": "Inspector",
+              "layout_mode": "auto",
+              "width": 260,
+              "height": 180
+            }
+          },
+          {
+            "type": "panel",
+            "properties": {
+              "title": "Checklist",
+              "layout_mode": "auto",
+              "width": 260,
+              "height": 240
+            },
+            "children": [
+              {
+                "type": "button",
+                "properties": {
+                  "text": "Save",
+                  "title": "Save",
+                  "layout_mode": "auto"
+                }
+              },
+              {
+                "type": "button",
+                "properties": {
+                  "text": "Load",
+                  "title": "Load",
+                  "layout_mode": "auto"
+                }
+              },
+              {
+                "type": "button",
+                "properties": {
+                  "text": "Export Handoff",
+                  "title": "Export Handoff",
+                  "layout_mode": "auto"
+                }
+              },
+              {
+                "type": "button",
+                "properties": {
+                  "text": "Export DSL",
+                  "title": "Export DSL",
+                  "layout_mode": "auto"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "tantrum_lab": {
+    "type": "document",
+    "properties": {
+      "title": "Tantrum Lab",
+      "layout_mode": "auto",
+      "description": "Loose scaffold for stress-testing layout, resizing, and visual intent."
+    },
+    "children": [
+      {
+        "type": "toolbar",
+        "properties": {
+          "title": "Top Bar",
+          "layout_mode": "auto"
+        },
+        "children": [
+          {
+            "type": "button",
+            "properties": {
+              "text": "Break It",
+              "title": "Break It",
+              "layout_mode": "auto"
+            }
+          },
+          {
+            "type": "button",
+            "properties": {
+              "text": "Reset Maybe",
+              "title": "Reset Maybe",
+              "layout_mode": "auto"
+            }
+          }
+        ]
+      },
+      {
+        "type": "horizontal",
+        "properties": {
+          "title": "Workbench",
+          "layout_mode": "auto"
+        },
+        "children": [
+          {
+            "type": "sidebar",
+            "properties": {
+              "title": "Loose Notes",
+              "layout_mode": "auto",
+              "description": "Park references, labels, and controls here."
+            },
+            "children": [
+              {
+                "type": "text",
+                "properties": {
+                  "value": "Drag things until they feel right.",
+                  "title": "Drag things until they feel right.",
+                  "layout_mode": "auto"
+                }
+              },
+              {
+                "type": "input",
+                "properties": {
+                  "placeholder": "What feels wrong?",
+                  "title": "What feels wrong?",
+                  "layout_mode": "auto"
+                }
+              }
+            ]
+          },
+          {
+            "type": "main",
+            "properties": {
+              "title": "Mess Zone",
+              "layout_mode": "auto",
+              "description": "Main play area with a few seeded free nodes."
+            },
+            "children": [
+              {
+                "type": "panel",
+                "properties": {
+                  "title": "Hero Block",
+                  "layout_mode": "free",
+                  "x": 64,
+                  "y": 64,
+                  "width": 320,
+                  "height": 220
+                }
+              },
+              {
+                "type": "panel",
+                "properties": {
+                  "title": "Inspector Victim",
+                  "layout_mode": "free",
+                  "x": 420,
+                  "y": 120,
+                  "width": 280,
+                  "height": 180
+                }
+              },
+              {
+                "type": "button",
+                "properties": {
+                  "text": "Tiny Button",
+                  "title": "Tiny Button",
+                  "layout_mode": "free",
+                  "x": 120,
+                  "y": 320,
+                  "width": 120,
+                  "height": 32
+                }
+              },
+              {
+                "type": "button",
+                "properties": {
+                  "text": "Big Mood",
+                  "title": "Big Mood",
+                  "layout_mode": "free",
+                  "x": 280,
+                  "y": 320,
+                  "width": 180,
+                  "height": 48
+                }
+              },
+              {
+                "type": "text",
+                "properties": {
+                  "value": "Throw shapes around. Keep what works.",
+                  "title": "Throw shapes around. Keep what works.",
+                  "layout_mode": "free",
+                  "x": 96,
+                  "y": 392,
+                  "width": 260,
+                  "height": 44
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
   }
 }

@@ -23,7 +23,7 @@
     },
     "height": {
       "type": "int",
-      "default": 100,
+      "default": 26,
       "group": "layout"
     },
     "min_width": {

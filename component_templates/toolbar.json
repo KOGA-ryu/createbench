@@ -1,5 +1,5 @@
 {
-  "type": "panel",
+  "type": "toolbar",
   "display_name": "Toolbar",
   "description": "A compact control strip for commands and quick actions.",
   "traits": {
@@ -10,7 +10,7 @@
     },
     "height": {
       "type": "int",
-      "default": 64,
+      "default": 40,
       "description": "Preferred height of the toolbar."
     },
     "layout_mode": {
@@ -41,7 +41,7 @@
     }
   },
   "display_rules": {
-    "preferred_width": 1200,
-    "preferred_height": 64
+    "preferred_width": 300,
+    "preferred_height": 40
   }
 }

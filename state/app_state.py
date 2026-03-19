@@ -20,6 +20,10 @@ class AppState:
         self.checklist_engine = ChecklistEngine(
             self.layout_model, self.property_registry
         )
+        self.scene_source_targets = {
+            "project": "project.json",
+            "extract_packet": "ui_extract_packet.json",
+        }
         self._locked = True
 
     def get_selected_node(self):
@@ -30,3 +34,11 @@ class AppState:
 
     def get_node(self, node_id):
         return self.layout_model.get_node(node_id)
+
+    def get_scene_source_target(self, source_type: str) -> str:
+        return str(self.scene_source_targets.get(source_type, ""))
+
+    def set_scene_source_target(self, source_type: str, target_path: str) -> None:
+        if source_type not in self.scene_source_targets:
+            raise ValueError(f"Unknown scene source type: {source_type}")
+        self.scene_source_targets[source_type] = str(target_path)

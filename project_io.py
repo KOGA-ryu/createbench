@@ -12,3 +12,5 @@ _SPEC.loader.exec_module(_MODULE)
 
 save_project = _MODULE.save_project
 load_project = _MODULE.load_project
+load_project_alongside = _MODULE.load_project_alongside
+load_project_in_bench = _MODULE.load_project_in_bench

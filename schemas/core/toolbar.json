@@ -9,6 +9,11 @@
     "@component"
   ],
   "properties": {
+    "width": {
+      "type": "int",
+      "default": 300,
+      "group": "layout"
+    },
     "title": {
       "type": "string",
       "default": "Toolbar",
@@ -16,7 +21,7 @@
     },
     "height": {
       "type": "int",
-      "default": 64,
+      "default": 40,
       "group": "layout"
     }
   }

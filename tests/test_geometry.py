@@ -32,14 +32,29 @@ def clamp_works():
 
 def resize_handle_detection_works():
     rect = {"x": 10, "y": 20, "width": 100, "height": 40}
+    assert detect_resize_handle((10, 20), rect) == "top_left"
+    assert detect_resize_handle((110, 20), rect) == "top_right"
+    assert detect_resize_handle((10, 60), rect) == "bottom_left"
     assert detect_resize_handle((110, 60), rect) == "bottom_right"
+    assert detect_resize_handle((10, 30), rect) == "left"
     assert detect_resize_handle((110, 30), rect) == "right"
+    assert detect_resize_handle((50, 20), rect) == "top"
     assert detect_resize_handle((50, 60), rect) == "bottom"
     assert detect_resize_handle((20, 30), rect) is None
 
 
 def resize_math_respects_min_sizes():
     rect = {"x": 10, "y": 20, "width": 100, "height": 40}
+
+    resized_left = apply_resize(
+        rect,
+        "left",
+        dx=20,
+        dy=0,
+        min_width=50,
+        min_height=30,
+    )
+    assert resized_left == {"x": 30, "y": 20, "width": 80, "height": 40}
 
     resized_width = apply_resize(
         rect,
@@ -60,6 +75,46 @@ def resize_math_respects_min_sizes():
         min_height=30,
     )
     assert resized_height == {"x": 10, "y": 20, "width": 100, "height": 30}
+
+    resized_top = apply_resize(
+        rect,
+        "top",
+        dx=0,
+        dy=5,
+        min_width=50,
+        min_height=30,
+    )
+    assert resized_top == {"x": 10, "y": 25, "width": 100, "height": 35}
+
+    resized_top_left = apply_resize(
+        rect,
+        "top_left",
+        dx=15,
+        dy=5,
+        min_width=50,
+        min_height=30,
+    )
+    assert resized_top_left == {"x": 25, "y": 25, "width": 85, "height": 35}
+
+    resized_top_right = apply_resize(
+        rect,
+        "top_right",
+        dx=20,
+        dy=5,
+        min_width=50,
+        min_height=30,
+    )
+    assert resized_top_right == {"x": 10, "y": 25, "width": 120, "height": 35}
+
+    resized_bottom_left = apply_resize(
+        rect,
+        "bottom_left",
+        dx=15,
+        dy=10,
+        min_width=50,
+        min_height=30,
+    )
+    assert resized_bottom_left == {"x": 25, "y": 20, "width": 85, "height": 50}
 
     resized_both = apply_resize(
         rect,

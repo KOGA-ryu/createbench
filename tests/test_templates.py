@@ -149,6 +149,61 @@ def apply_template_without_selection_falls_back_to_root():
     assert [child.type for child in root_children] == ["document", "toolbar", "horizontal"]
 
 
+def createbench_ui_template_models_current_app():
+    canvas, model, _selection = make_canvas()
+    templates = load_templates()
+    canvas.apply_template(templates["createbench_ui"], replace_root=True)
+
+    document = model.get_children(model.root_id)[0]
+    left_rail, canvas_area, right_panel = model.get_children(document.id)
+    template_panel, structure_panel, component_panel = model.get_children(left_rail.id)
+
+    assert document.properties["title"] == "Create Bench UI"
+    assert document.properties["layout_mode"] == "free"
+    assert document.properties["width"] == 1380
+    assert document.properties["height"] == 860
+    assert [child.type for child in model.get_children(document.id)] == ["panel", "panel", "panel"]
+    assert left_rail.properties["layout_mode"] == "free"
+    assert canvas_area.properties["layout_mode"] == "free"
+    assert [child.properties["title"] for child in model.get_children(left_rail.id)] == [
+        "Templates",
+        "Structure Actions",
+        "Component Creator",
+    ]
+    assert "ui_role" not in template_panel.properties
+    assert "ui_role" not in canvas_area.properties
+    assert "ui_role" not in structure_panel.properties
+    assert "ui_role" not in component_panel.properties
+    assert template_panel.properties["width"] == 248
+    assert structure_panel.properties["height"] == 132
+    assert component_panel.properties["height"] == 140
+    assert right_panel.properties["ui_role"] == "tool_window"
+    assert right_panel.properties["layout_mode"] == "free"
+    assert right_panel.properties["width"] == 320
+    assert right_panel.properties["x"] == 1036
+
+
+def tantrum_lab_template_provides_loose_play_surface():
+    canvas, model, _selection = make_canvas()
+    templates = load_templates()
+    canvas.apply_template(templates["tantrum_lab"], replace_root=True)
+
+    document = model.get_children(model.root_id)[0]
+    toolbar, workbench = model.get_children(document.id)
+    notes, mess_zone = model.get_children(workbench.id)
+    hero_block, victim_panel, tiny_button, big_button, free_text = model.get_children(mess_zone.id)
+
+    assert document.properties["title"] == "Tantrum Lab"
+    assert [child.type for child in model.get_children(document.id)] == ["toolbar", "horizontal"]
+    assert notes.type == "sidebar"
+    assert mess_zone.type == "main"
+    assert hero_block.properties["layout_mode"] == "free"
+    assert victim_panel.properties["layout_mode"] == "free"
+    assert tiny_button.properties["width"] == 120
+    assert big_button.properties["height"] == 48
+    assert free_text.properties["layout_mode"] == "free"
+
+
 def run_all_tests():
     tests = [
         apply_basic_template_to_empty_canvas,
@@ -160,6 +215,8 @@ def run_all_tests():
         preserve_template_order,
         replace_root_clears_previous_content,
         apply_template_without_selection_falls_back_to_root,
+        createbench_ui_template_models_current_app,
+        tantrum_lab_template_provides_loose_play_surface,
     ]
 
     passed = 0

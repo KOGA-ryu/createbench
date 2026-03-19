@@ -18,12 +18,12 @@
     },
     "width": {
       "type": "int",
-      "default": 200,
+      "default": 220,
       "group": "layout"
     },
     "height": {
       "type": "int",
-      "default": 100,
+      "default": 32,
       "group": "layout"
     },
     "min_width": {

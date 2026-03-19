@@ -10,6 +10,16 @@
     "@component"
   ],
   "properties": {
+    "width": {
+      "type": "int",
+      "default": 400,
+      "group": "layout"
+    },
+    "height": {
+      "type": "int",
+      "default": 300,
+      "group": "layout"
+    },
     "title": {
       "type": "string",
       "default": "Main",

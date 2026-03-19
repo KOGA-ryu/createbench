@@ -10,6 +10,16 @@
     "@component"
   ],
   "properties": {
+    "width": {
+      "type": "int",
+      "default": 260,
+      "group": "layout"
+    },
+    "height": {
+      "type": "int",
+      "default": 180,
+      "group": "layout"
+    },
     "title": {
       "type": "string",
       "default": "Panel",

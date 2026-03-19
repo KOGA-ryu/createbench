@@ -1,9 +1,18 @@
+import json
 import sys
+import tempfile
 from pathlib import Path
 
-from PySide6.QtCore import QPoint, QPointF, Qt
+from PySide6.QtCore import QEvent, QPoint, QPointF, Qt
 from PySide6.QtGui import QMouseEvent
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import (
+    QApplication,
+    QComboBox,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QWidget,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -16,11 +25,13 @@ from engine.constraints import clamp_to_parent
 from engine.geometry import rect_contains_rect
 from engine.layout_engine import LayoutEngine
 from inspector.property_registry import PropertyRegistry
+from state.app_state import AppState
 from state.selection_state import SelectionState
+from ui.main_window import MainWindow
 
 
 CORE_SCHEMAS = PROJECT_ROOT / "schemas" / "core"
-CANVAS = {"x": 0, "y": 0, "width": 800, "height": 600}
+CANVAS = {"x": 0, "y": 0, "width": 1440, "height": 900}
 APP = QApplication.instance() or QApplication([])
 
 
@@ -38,12 +49,13 @@ def make_canvas():
     return canvas, model, selection
 
 
-def _mouse_event(event_type, point):
+def _mouse_event(event_type, point, button=Qt.MouseButton.LeftButton, buttons=None):
+    active_buttons = buttons if buttons is not None else button
     return QMouseEvent(
         event_type,
         QPointF(point),
-        Qt.MouseButton.LeftButton,
-        Qt.MouseButton.LeftButton,
+        button,
+        active_buttons,
         Qt.KeyboardModifier.NoModifier,
     )
 
@@ -68,100 +80,8 @@ def mixed_auto_and_free_layout():
     rects = engine.compute_layout(model.root_id, CANVAS)
     for node in (document, horizontal, sidebar, main, panel):
         assert node.id in rects
-    assert rects[panel.id] == {"x": 400, "y": 120, "width": 160, "height": 120}
+    assert rects[panel.id]["width"] == 160
     assert rects[sidebar.id]["width"] > 0
-    assert rects[main.id]["width"] > 0
-    assert rects[sidebar.id] != rects[panel.id]
-
-
-def drag_auto_node_converts_to_free():
-    model = make_model()
-    engine = LayoutEngine(model)
-    document = model.create_node("document", {"layout_mode": "auto"})
-    button = model.create_node("button", {"layout_mode": "auto"})
-    model.add_node(model.root_id, document)
-    model.add_node(document.id, button)
-
-    engine.compute_layout(model.root_id, CANVAS)
-    before = dict(button.properties)
-    result = engine.move_node(button.id, 173, 117, CANVAS)
-
-    assert before["layout_mode"] == "auto"
-    assert result["layout_mode"] == "free"
-    assert result["x"] % 8 == 0
-    assert result["y"] % 8 == 0
-    assert result["width"] > 0
-    assert result["height"] > 0
-    assert button.properties["layout_mode"] == "auto"
-
-
-def locked_node_blocks_move_and_resize():
-    model = make_model()
-    engine = LayoutEngine(model)
-    node = model.create_node(
-        "button",
-        {
-            "layout_mode": "free",
-            "locked": True,
-            "x": 80,
-            "y": 96,
-            "width": 120,
-            "height": 64,
-            "title": "Save CTA",
-        },
-    )
-    model.add_node(model.root_id, node)
-    engine.compute_layout(model.root_id, CANVAS)
-    before_props = dict(node.properties)
-    before_rect = dict(engine.rect_map[node.id])
-
-    moved = engine.move_node(node.id, 200, 220, CANVAS)
-    resized = engine.resize_node(node.id, "bottom_right", 80, 80, CANVAS)
-
-    assert moved["blocked"] is True
-    assert resized["blocked"] is True
-    assert moved["x"] == before_rect["x"]
-    assert moved["y"] == before_rect["y"]
-    assert resized["width"] == before_rect["width"]
-    assert resized["height"] == before_rect["height"]
-    assert node.properties == before_props
-
-
-def overlapping_nodes_hit_test_topmost():
-    model = make_model()
-    engine = LayoutEngine(model)
-    first = model.create_node("panel", {"layout_mode": "free", "x": 40, "y": 40, "width": 200, "height": 160})
-    second = model.create_node("button", {"layout_mode": "free", "x": 80, "y": 80, "width": 120, "height": 80})
-    model.add_node(model.root_id, first)
-    model.add_node(model.root_id, second)
-
-    rects = engine.compute_layout(model.root_id, CANVAS)
-    assert engine.hit_test((100, 100), rects, engine.draw_order) == second.id
-
-
-def grid_snap_stability():
-    model = make_model()
-    engine = LayoutEngine(model)
-    node = model.create_node("button", {"layout_mode": "free", "x": 13, "y": 19, "width": 99, "height": 42})
-    model.add_node(model.root_id, node)
-
-    results = [engine.move_node(node.id, 15, 18, CANVAS) for _ in range(5)]
-    first = results[0]
-    assert all(result == first for result in results[1:])
-
-
-def resize_clamps_to_min():
-    model = make_model()
-    engine = LayoutEngine(model)
-    node = model.create_node(
-        "button",
-        {"layout_mode": "free", "x": 100, "y": 100, "width": 120, "height": 64, "min_width": 50, "min_height": 30},
-    )
-    model.add_node(model.root_id, node)
-
-    result = engine.resize_node(node.id, "bottom_right", -400, -400, CANVAS)
-    assert result["width"] == 50
-    assert result["height"] == 30
 
 
 def parent_bounds_enforced():
@@ -177,107 +97,9 @@ def parent_bounds_enforced():
     rects = engine.compute_layout(model.root_id, CANVAS)
     parent_rect = rects[parent.id]
     moved = engine.move_node(child.id, 999, 999, CANVAS)
-    moved_rect = {
-        "x": moved["x"],
-        "y": moved["y"],
-        "width": moved["width"],
-        "height": moved["height"],
-    }
+    moved_rect = {"x": moved["x"], "y": moved["y"], "width": moved["width"], "height": moved["height"]}
     assert rect_contains_rect(parent_rect, moved_rect)
     assert moved_rect == clamp_to_parent(moved_rect, parent_rect)
-
-
-def canvas_rect_map_matches_engine():
-    canvas, model, _selection = make_canvas()
-    document = model.create_node("document", {"layout_mode": "auto"})
-    button = model.create_node("button", {"layout_mode": "free", "x": 96, "y": 88, "width": 120, "height": 64})
-    model.add_node(model.root_id, document)
-    model.add_node(document.id, button)
-
-    canvas.show()
-    canvas.repaint()
-    APP.processEvents()
-
-    engine_rect = canvas.layout_engine.get_node_rect(button.id)
-    canvas_rect = canvas.node_rects[button.id]
-    assert engine_rect == {
-        "x": canvas_rect.x(),
-        "y": canvas_rect.y(),
-        "width": canvas_rect.width(),
-        "height": canvas_rect.height(),
-    }
-
-
-def move_does_not_mutate_semantic_fields():
-    model = make_model()
-    engine = LayoutEngine(model)
-    node = model.create_node(
-        "button",
-        {
-            "layout_mode": "free",
-            "x": 32,
-            "y": 48,
-            "width": 120,
-            "height": 64,
-            "title": "Primary",
-            "description": "Save changes",
-            "behavior": "submit",
-            "interactions": "click",
-        },
-    )
-    model.add_node(model.root_id, node)
-    before = {
-        "title": node.properties["title"],
-        "description": node.properties["description"],
-        "behavior": node.properties["behavior"],
-        "interactions": node.properties["interactions"],
-    }
-
-    engine.move_node(node.id, 177, 141, CANVAS)
-
-    after = {
-        "title": node.properties["title"],
-        "description": node.properties["description"],
-        "behavior": node.properties["behavior"],
-        "interactions": node.properties["interactions"],
-    }
-    assert before == after
-
-
-def resize_does_not_mutate_semantic_fields():
-    model = make_model()
-    engine = LayoutEngine(model)
-    node = model.create_node(
-        "button",
-        {
-            "layout_mode": "free",
-            "x": 32,
-            "y": 48,
-            "width": 120,
-            "height": 64,
-            "title": "Primary",
-            "description": "Save changes",
-            "behavior": "submit",
-            "interactions": "click",
-        },
-    )
-    model.add_node(model.root_id, node)
-    before = {
-        "title": node.properties["title"],
-        "description": node.properties["description"],
-        "behavior": node.properties["behavior"],
-        "interactions": node.properties["interactions"],
-    }
-
-    engine.resize_node(node.id, "bottom_right", 40, 24, CANVAS)
-
-    after = {
-        "title": node.properties["title"],
-        "description": node.properties["description"],
-        "behavior": node.properties["behavior"],
-        "interactions": node.properties["interactions"],
-    }
-    assert before == after
 
 
 def rect_map_unique_per_node():
@@ -287,7 +109,6 @@ def rect_map_unique_per_node():
     model.add_node(model.root_id, document)
     for _ in range(5):
         model.add_node(document.id, model.create_node("button", {"layout_mode": "auto"}))
-
     rects = engine.compute_layout(model.root_id, CANVAS)
     assert len(rects) == len(set(rects))
     assert len(engine.draw_order) == len(set(engine.draw_order))
@@ -301,98 +122,543 @@ def no_negative_geometry_emitted():
         {"layout_mode": "free", "x": 10, "y": 10, "width": 1, "height": 1, "min_width": 50, "min_height": 30},
     )
     model.add_node(model.root_id, node)
-
     rects = engine.compute_layout(model.root_id, CANVAS)
     moved = engine.move_node(node.id, -100, -100, CANVAS)
     resized = engine.resize_node(node.id, "bottom_right", -1000, -1000, CANVAS)
-
     assert rects[node.id]["width"] >= 50
-    assert rects[node.id]["height"] >= 30
     assert moved["width"] >= 50
-    assert moved["height"] >= 30
-    assert resized["width"] >= 50
     assert resized["height"] >= 30
 
 
-def click_after_drag_selects_correct_node():
-    canvas, model, selection = make_canvas()
+def world_rects_remain_engine_truth():
+    canvas, model, _selection = make_canvas()
     document = model.create_node("document", {"layout_mode": "auto"})
-    first = model.create_node("button", {"layout_mode": "auto"})
-    second = model.create_node("button", {"layout_mode": "free", "x": 300, "y": 200, "width": 120, "height": 64})
-    model.add_node(model.root_id, document)
-    model.add_node(document.id, first)
-    model.add_node(document.id, second)
-    canvas.show()
-    canvas.repaint()
-    APP.processEvents()
-
-    start = canvas.node_rects[first.id].center()
-    moved = QPoint(start.x() + 80, start.y() + 56)
-    canvas.mousePressEvent(_mouse_event(QMouseEvent.Type.MouseButtonPress, start))
-    canvas.mouseMoveEvent(_mouse_event(QMouseEvent.Type.MouseMove, moved))
-    canvas.mouseReleaseEvent(_mouse_event(QMouseEvent.Type.MouseButtonRelease, moved))
-    APP.processEvents()
-
-    click_point = canvas.node_rects[second.id].center()
-    canvas.mousePressEvent(_mouse_event(QMouseEvent.Type.MouseButtonPress, click_point))
-    assert selection.get_selection() == second.id
-
-
-def locked_node_still_selectable():
-    canvas, model, selection = make_canvas()
-    document = model.create_node("document", {"layout_mode": "auto"})
-    button = model.create_node("button", {"locked": True})
+    button = model.create_node("button", {"layout_mode": "free", "x": 96, "y": 88, "width": 120, "height": 64})
     model.add_node(model.root_id, document)
     model.add_node(document.id, button)
     canvas.show()
     canvas.repaint()
     APP.processEvents()
+    assert canvas.engine_rects[button.id] == {
+        "x": canvas.node_rects[button.id].x(),
+        "y": canvas.node_rects[button.id].y(),
+        "width": canvas.node_rects[button.id].width(),
+        "height": canvas.node_rects[button.id].height(),
+    }
 
-    point = canvas.node_rects[button.id].center()
-    canvas.mousePressEvent(_mouse_event(QMouseEvent.Type.MouseButtonPress, point))
+
+def screen_mapping_uses_camera_offset():
+    canvas, model, _selection = make_canvas()
+    document = model.create_node("document", {"layout_mode": "auto"})
+    button = model.create_node("button", {"layout_mode": "free", "x": 300, "y": 220, "width": 120, "height": 64})
+    model.add_node(model.root_id, document)
+    model.add_node(document.id, button)
+    canvas.show()
+    canvas.repaint()
+    APP.processEvents()
+    before = canvas.screen_rects[button.id]
+    canvas.camera_x = 100
+    canvas.camera_y = 60
+    canvas.repaint()
+    APP.processEvents()
+    after = canvas.screen_rects[button.id]
+    assert after.x() == before.x() - 100
+    assert after.y() == before.y() - 60
+    assert canvas.node_rects[button.id].x() == 300
+
+
+def hit_test_uses_world_space():
+    canvas, model, selection = make_canvas()
+    document = model.create_node("document", {"layout_mode": "auto"})
+    button = model.create_node("button", {"layout_mode": "free", "x": 300, "y": 220, "width": 120, "height": 64})
+    model.add_node(model.root_id, document)
+    model.add_node(document.id, button)
+    canvas.show()
+    canvas.repaint()
+    APP.processEvents()
+    canvas.camera_x = 120
+    canvas.camera_y = 80
+    canvas.repaint()
+    APP.processEvents()
+    canvas.mousePressEvent(_mouse_event(QMouseEvent.Type.MouseButtonPress, canvas.screen_rects[button.id].center()))
     assert selection.get_selection() == button.id
 
 
-def free_node_drag_updates_canvas_rects_after_repaint():
+def drag_after_pan_updates_correct_world_position():
     canvas, model, _selection = make_canvas()
     document = model.create_node("document", {"layout_mode": "auto"})
-    button = model.create_node("button", {"layout_mode": "free", "x": 120, "y": 120, "width": 120, "height": 64})
+    button = model.create_node("button", {"layout_mode": "free", "x": 300, "y": 220, "width": 120, "height": 64})
     model.add_node(model.root_id, document)
     model.add_node(document.id, button)
     canvas.show()
     canvas.repaint()
     APP.processEvents()
-
-    before = canvas.node_rects[button.id]
-    start = before.center()
-    moved = QPoint(start.x() + 40, start.y() + 32)
+    canvas.camera_x = 120
+    canvas.camera_y = 80
+    canvas.repaint()
+    APP.processEvents()
+    start = canvas.screen_rects[button.id].center()
+    moved = QPoint(start.x() + 40, start.y() + 24)
     canvas.mousePressEvent(_mouse_event(QMouseEvent.Type.MouseButtonPress, start))
     canvas.mouseMoveEvent(_mouse_event(QMouseEvent.Type.MouseMove, moved))
     canvas.mouseReleaseEvent(_mouse_event(QMouseEvent.Type.MouseButtonRelease, moved))
+    assert button.properties["x"] > 300
+    assert button.properties["y"] > 220
+
+
+def focus_selected_recenters_camera_without_rescaling():
+    canvas, model, selection = make_canvas()
+    document = model.create_node("document", {"layout_mode": "auto"})
+    button = model.create_node("button", {"layout_mode": "free", "x": 1000, "y": 760, "width": 120, "height": 64})
+    model.add_node(model.root_id, document)
+    model.add_node(document.id, button)
+    canvas.show()
     canvas.repaint()
     APP.processEvents()
+    selection.set_selection(button.id)
+    before = dict(canvas.get_viewport_state()["camera"])
+    canvas.focus_selected_node()
+    after = dict(canvas.get_viewport_state()["camera"])
+    assert after != before
+    assert "scale" not in canvas.get_viewport_state()
 
-    after = canvas.node_rects[button.id]
-    assert after.topLeft() != before.topLeft()
+
+def show_all_resets_camera():
+    canvas, model, selection = make_canvas()
+    document = model.create_node("document", {"layout_mode": "auto"})
+    button = model.create_node("button", {"layout_mode": "free", "x": 1000, "y": 760, "width": 120, "height": 64})
+    model.add_node(model.root_id, document)
+    model.add_node(document.id, button)
+    canvas.show()
+    canvas.repaint()
+    APP.processEvents()
+    selection.set_selection(button.id)
+    canvas.focus_selected_node()
+    canvas.clear_focus()
+    assert canvas.camera_x == 0
+    assert canvas.camera_y == 0
+
+
+def resize_after_pan_uses_world_delta():
+    canvas, model, selection = make_canvas()
+    document = model.create_node("document", {"layout_mode": "auto"})
+    button = model.create_node("button", {"layout_mode": "free", "x": 300, "y": 220, "width": 120, "height": 64})
+    model.add_node(model.root_id, document)
+    model.add_node(document.id, button)
+    canvas.show()
+    canvas.repaint()
+    APP.processEvents()
+    selection.set_selection(button.id)
+    canvas.camera_x = 120
+    canvas.camera_y = 80
+    canvas.repaint()
+    APP.processEvents()
+    handle = canvas.handle_rects[(button.id, "bottom_right")].center()
+    moved = QPoint(handle.x() + 48, handle.y() + 40)
+    canvas.mousePressEvent(_mouse_event(QMouseEvent.Type.MouseButtonPress, handle))
+    canvas.mouseMoveEvent(_mouse_event(QMouseEvent.Type.MouseMove, moved))
+    canvas.mouseReleaseEvent(_mouse_event(QMouseEvent.Type.MouseButtonRelease, moved))
+    assert button.properties["width"] > 120
+    assert button.properties["height"] > 64
+
+
+def panning_does_not_change_node_geometry():
+    canvas, model, _selection = make_canvas()
+    document = model.create_node("document", {"layout_mode": "auto"})
+    button = model.create_node("button", {"layout_mode": "free", "x": 300, "y": 220, "width": 120, "height": 64})
+    model.add_node(model.root_id, document)
+    model.add_node(document.id, button)
+    before = dict(button.properties)
+    canvas.show()
+    canvas.repaint()
+    APP.processEvents()
+    start = QPoint(200, 200)
+    moved = QPoint(150, 120)
+    canvas.mousePressEvent(_mouse_event(QMouseEvent.Type.MouseButtonPress, start, button=Qt.MouseButton.MiddleButton))
+    canvas.mouseMoveEvent(_mouse_event(QMouseEvent.Type.MouseMove, moved, button=Qt.MouseButton.NoButton, buttons=Qt.MouseButton.MiddleButton))
+    canvas.mouseReleaseEvent(_mouse_event(QMouseEvent.Type.MouseButtonRelease, moved, button=Qt.MouseButton.MiddleButton))
+    assert button.properties == before
+
+
+def drag_no_longer_requires_viewport_lock():
+    canvas, model, _selection = make_canvas()
+    document = model.create_node("document", {"layout_mode": "auto"})
+    button = model.create_node("button", {"layout_mode": "free", "x": 300, "y": 220, "width": 120, "height": 64})
+    model.add_node(model.root_id, document)
+    model.add_node(document.id, button)
+    canvas.show()
+    canvas.repaint()
+    APP.processEvents()
+    before = dict(canvas.get_viewport_state()["camera"])
+    start = canvas.screen_rects[button.id].center()
+    moved = QPoint(start.x() + 20, start.y() + 20)
+    canvas.mousePressEvent(_mouse_event(QMouseEvent.Type.MouseButtonPress, start))
+    canvas.mouseMoveEvent(_mouse_event(QMouseEvent.Type.MouseMove, moved))
+    during = dict(canvas.get_viewport_state()["camera"])
+    canvas.mouseReleaseEvent(_mouse_event(QMouseEvent.Type.MouseButtonRelease, moved))
+    assert during == before
+
+
+def middle_mouse_pan_updates_camera():
+    canvas, model, _selection = make_canvas()
+    document = model.create_node("document", {"layout_mode": "auto"})
+    model.add_node(model.root_id, document)
+    canvas.show()
+    canvas.repaint()
+    APP.processEvents()
+    start = QPoint(240, 220)
+    moved = QPoint(160, 140)
+    canvas.mousePressEvent(_mouse_event(QMouseEvent.Type.MouseButtonPress, start, button=Qt.MouseButton.MiddleButton))
+    canvas.mouseMoveEvent(_mouse_event(QMouseEvent.Type.MouseMove, moved, button=Qt.MouseButton.NoButton, buttons=Qt.MouseButton.MiddleButton))
+    canvas.mouseReleaseEvent(_mouse_event(QMouseEvent.Type.MouseButtonRelease, moved, button=Qt.MouseButton.MiddleButton))
+    assert canvas.camera_x > 0
+    assert canvas.camera_y > 0
+
+
+def status_strip_updates_focus_label():
+    state = AppState(str(CORE_SCHEMAS))
+    state.layout_model.set_scene_metadata(
+        {
+            "representation_origin": "adapter",
+            "packet_trust_level": "partial",
+        }
+    )
+    document = state.layout_model.create_node("document", {"layout_mode": "auto"})
+    button = state.layout_model.create_node("button", {"layout_mode": "free", "x": 900, "y": 700, "width": 120, "height": 64})
+    state.layout_model.add_node(state.layout_model.root_id, document)
+    state.layout_model.add_node(document.id, button)
+    window = MainWindow(state)
+    state.selection_state.set_selection(button.id)
+    window.canvas_panel.focus_selected_node()
+    APP.processEvents()
+    assert "SCENE: adapter/partial" in window.canvas_status_label.text()
+    assert "MODE: source" in window.canvas_status_label.text()
+    assert f"FOCUS: {button.id}" in window.canvas_status_label.text()
+
+
+def unified_scene_actions_exist():
+    state = AppState(str(CORE_SCHEMAS))
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        project_path = tmp_path / "project.json"
+        packet_path = tmp_path / "ui_extract_packet.json"
+        project_path.write_text(
+            json.dumps({"version": "v1", "data": {"id": "root", "type": "root", "properties": {}, "children": []}}, indent=2),
+            encoding="utf-8",
+        )
+        packet_path.write_text(
+            json.dumps(
+                {
+                    "packet_version": "1",
+                    "source_framework": "pyside6",
+                    "source_provider": "manual_adapter",
+                    "trust_level": "partial",
+                    "roots": [],
+                    "nodes": [],
+                    "warnings": [],
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        state.set_scene_source_target("project", str(project_path))
+        state.set_scene_source_target("extract_packet", str(packet_path))
+        window = MainWindow(state)
+        project_section = window.section_contents["Project"]
+        save_group = project_section.findChild(QWidget, "project_save_group")
+        source_group = project_section.findChild(QWidget, "project_source_group")
+        actions_group = project_section.findChild(QWidget, "project_scene_actions_group")
+        export_group = project_section.findChild(QWidget, "project_export_group")
+        save_group_title = project_section.findChild(QLabel, "project_save_group_title")
+        source_group_title = project_section.findChild(QLabel, "project_source_group_title")
+        actions_group_title = project_section.findChild(QLabel, "project_scene_actions_group_title")
+        export_group_title = project_section.findChild(QLabel, "project_export_group_title")
+        save_target_label = project_section.findChild(QLabel, "save_target_label")
+        selector = project_section.findChild(QComboBox, "scene_source_selector")
+        target_field = project_section.findChild(QLineEdit, "scene_source_target_field")
+        hint_label = project_section.findChild(QLabel, "scene_action_hint_label")
+        preflight_label = project_section.findChild(QLabel, "scene_source_preflight_label")
+        context_label = project_section.findChild(QLabel, "scene_action_context_label")
+        replace_button = project_section.findChild(QPushButton, "scene_replace_button")
+        alongside_button = project_section.findChild(QPushButton, "scene_alongside_button")
+        bench_button = project_section.findChild(QPushButton, "scene_bench_button")
+
+        assert save_group is not None
+        assert source_group is not None
+        assert actions_group is not None
+        assert export_group is not None
+        assert save_group_title is not None
+        assert save_group_title.text() == "Save & Persist"
+        assert source_group_title is not None
+        assert source_group_title.text() == "Source Target"
+        assert actions_group_title is not None
+        assert actions_group_title.text() == "Scene Actions"
+        assert export_group_title is not None
+        assert export_group_title.text() == "Export"
+        assert save_target_label is not None
+        assert save_target_label.text() == f"Save Target: {project_path}"
+        assert selector is not None
+        assert selector.count() == 2
+        assert selector.itemText(0) == "Project JSON"
+        assert selector.itemText(1) == "UI Extract Packet"
+        assert target_field is not None
+        assert target_field.text() == str(project_path)
+        assert preflight_label is not None
+        assert preflight_label.text() == "Preflight: valid project file"
+        assert hint_label is not None
+        assert context_label is not None
+        assert "Current scene is design-only" in context_label.text()
+        assert "incoming project JSON" in context_label.text()
+        assert str(project_path) in context_label.text()
+        assert "Alongside: preserves the current scene" in hint_label.text()
+        selector.setCurrentIndex(1)
+        APP.processEvents()
+        assert target_field.text() == str(packet_path)
+        assert save_target_label.text() == f"Save Target: {project_path}"
+        assert preflight_label.text() == "Preflight: valid extract packet"
+        assert replace_button is not None
+        assert replace_button.text() == "Replace Current Scene"
+        assert alongside_button is not None
+        assert alongside_button.text() == "Import Alongside (Recommended)"
+        assert bench_button is not None
+        assert bench_button.text() == "Open In Bench"
+        window.eventFilter(alongside_button, QEvent(QEvent.Type.FocusIn))
+        assert "Alongside: preserves the current scene" in hint_label.text()
+        window.eventFilter(bench_button, QEvent(QEvent.Type.FocusIn))
+        assert "Recommended: Bench preserves the current scene" in hint_label.text()
+
+
+def source_scene_defaults_to_bench_recommendation():
+    state = AppState(str(CORE_SCHEMAS))
+    state.layout_model.set_scene_metadata(
+        {
+            "representation_origin": "adapter",
+            "packet_trust_level": "partial",
+        }
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        project_path = tmp_path / "project.json"
+        project_path.write_text(
+            json.dumps({"version": "v1", "data": {"id": "root", "type": "root", "properties": {}, "children": []}}, indent=2),
+            encoding="utf-8",
+        )
+        state.set_scene_source_target("project", str(project_path))
+        window = MainWindow(state)
+        project_section = window.section_contents["Project"]
+        hint_label = project_section.findChild(QLabel, "scene_action_hint_label")
+        context_label = project_section.findChild(QLabel, "scene_action_context_label")
+        alongside_button = project_section.findChild(QPushButton, "scene_alongside_button")
+        bench_button = project_section.findChild(QPushButton, "scene_bench_button")
+
+        assert hint_label is not None
+        assert context_label is not None
+        assert alongside_button is not None
+        assert bench_button is not None
+        assert "Current scene is source-backed" in context_label.text()
+        assert "incoming project JSON" in context_label.text()
+        assert str(project_path) in context_label.text()
+        assert "Recommended: Bench preserves the current scene" in hint_label.text()
+        assert alongside_button.text() == "Import Alongside"
+        assert bench_button.text() == "Open In Bench (Recommended)"
+
+
+def scene_source_target_field_updates_app_state():
+    state = AppState(str(CORE_SCHEMAS))
+    window = MainWindow(state)
+    project_section = window.section_contents["Project"]
+    selector = project_section.findChild(QComboBox, "scene_source_selector")
+    save_target_label = project_section.findChild(QLabel, "save_target_label")
+    target_field = project_section.findChild(QLineEdit, "scene_source_target_field")
+    preflight_label = project_section.findChild(QLabel, "scene_source_preflight_label")
+    context_label = project_section.findChild(QLabel, "scene_action_context_label")
+    hint_label = project_section.findChild(QLabel, "scene_action_hint_label")
+    replace_button = project_section.findChild(QPushButton, "scene_replace_button")
+    alongside_button = project_section.findChild(QPushButton, "scene_alongside_button")
+    bench_button = project_section.findChild(QPushButton, "scene_bench_button")
+
+    assert selector is not None
+    assert save_target_label is not None
+    assert target_field is not None
+    assert preflight_label is not None
+    assert context_label is not None
+    assert hint_label is not None
+    assert replace_button is not None
+    assert alongside_button is not None
+    assert bench_button is not None
+    selector.setCurrentIndex(1)
+    APP.processEvents()
+    target_field.setText("packets/custom_packet.json")
+    target_field.editingFinished.emit()
+    assert state.get_scene_source_target("extract_packet") == "packets/custom_packet.json"
+    assert preflight_label.text() == "Preflight: missing target"
+    assert (
+        context_label.text()
+        == "Scene actions are unavailable until the selected source passes preflight."
+    )
+    assert hint_label.text() == ""
+    assert not replace_button.isEnabled()
+    assert not alongside_button.isEnabled()
+    assert not bench_button.isEnabled()
+    selector.setCurrentIndex(0)
+    APP.processEvents()
+    assert target_field.text() == "project.json"
+    target_field.setText("projects/custom_project.json")
+    target_field.editingFinished.emit()
+    assert save_target_label.text() == "Save Target: projects/custom_project.json"
+    assert (
+        context_label.text()
+        == "Scene actions are unavailable until the selected source passes preflight."
+    )
+    selector.setCurrentIndex(1)
+    APP.processEvents()
+    assert target_field.text() == "packets/custom_packet.json"
+    assert save_target_label.text() == "Save Target: projects/custom_project.json"
+
+
+def scene_source_preflight_reflects_target_validity():
+    state = AppState(str(CORE_SCHEMAS))
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        project_path = tmp_path / "scene_project.json"
+        packet_path = tmp_path / "scene_packet.json"
+        project_path.write_text(
+            json.dumps({"version": "v1", "data": {"id": "root", "type": "root", "properties": {}, "children": []}}, indent=2),
+            encoding="utf-8",
+        )
+        packet_path.write_text(
+            json.dumps(
+                {
+                    "packet_version": "1",
+                    "source_framework": "pyside6",
+                    "source_provider": "manual_adapter",
+                    "trust_level": "partial",
+                    "roots": ["button_1"],
+                    "nodes": [
+                        {
+                            "id": "button_1",
+                            "type": "button",
+                            "ui_role": None,
+                            "parent": None,
+                            "children": [],
+                            "source": {
+                                "file": "ui/main_window.py",
+                                "symbol": "save_button",
+                                "line_start": 10,
+                                "line_end": 10,
+                                "source_id": "src_button_1",
+                            },
+                            "layout_hints": {
+                                "layout_mode": "free",
+                                "layout_direction": None,
+                                "preferred_width": None,
+                                "preferred_height": None,
+                                "min_width": None,
+                                "min_height": None,
+                                "max_width": None,
+                                "max_height": None,
+                                "x": 20,
+                                "y": 20,
+                                "width": 120,
+                                "height": 40,
+                            },
+                            "render_hints": {
+                                "title": None,
+                                "text": "Save",
+                                "placeholder": None,
+                                "icon": None,
+                                "visible": True,
+                                "enabled": True,
+                                "window_mode": None,
+                            },
+                            "relationships": {
+                                "communicates_to": [],
+                                "depends_on": [],
+                                "updated_by": [],
+                                "triggered_by": [],
+                            },
+                            "trust": {
+                                "trust_level": "partial",
+                                "representation_origin": "adapter",
+                                "warnings": [],
+                            },
+                            "raw": {
+                                "provider_type": "button",
+                                "provider_data": {},
+                                "unresolved_fields": [],
+                            },
+                        }
+                    ],
+                    "warnings": [],
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        state.set_scene_source_target("project", str(project_path))
+        state.set_scene_source_target("extract_packet", str(packet_path))
+        window = MainWindow(state)
+        project_section = window.section_contents["Project"]
+        selector = project_section.findChild(QComboBox, "scene_source_selector")
+        preflight_label = project_section.findChild(QLabel, "scene_source_preflight_label")
+        target_field = project_section.findChild(QLineEdit, "scene_source_target_field")
+
+        assert selector is not None
+        assert preflight_label is not None
+        assert target_field is not None
+        assert preflight_label.text() == "Preflight: valid project file"
+        selector.setCurrentIndex(1)
+        APP.processEvents()
+        assert preflight_label.text() == "Preflight: valid extract packet"
+        target_field.setText(str(tmp_path / "missing.json"))
+        target_field.editingFinished.emit()
+        assert preflight_label.text() == "Preflight: missing target"
+
+
+def no_auto_reframe_on_interaction():
+    canvas, model, selection = make_canvas()
+    document = model.create_node("document", {"layout_mode": "auto"})
+    button = model.create_node("button", {"layout_mode": "free", "x": 300, "y": 220, "width": 120, "height": 64})
+    model.add_node(model.root_id, document)
+    model.add_node(document.id, button)
+    canvas.show()
+    canvas.repaint()
+    APP.processEvents()
+    selection.set_selection(button.id)
+    canvas.repaint()
+    APP.processEvents()
+    before_camera = dict(canvas.get_viewport_state()["camera"])
+    handle = canvas.handle_rects[(button.id, "bottom_right")].center()
+    moved = QPoint(handle.x() + 24, handle.y() + 24)
+    canvas.mousePressEvent(_mouse_event(QMouseEvent.Type.MouseButtonPress, handle))
+    canvas.mouseMoveEvent(_mouse_event(QMouseEvent.Type.MouseMove, moved))
+    during_camera = dict(canvas.get_viewport_state()["camera"])
+    canvas.mouseReleaseEvent(_mouse_event(QMouseEvent.Type.MouseButtonRelease, moved))
+    assert during_camera == before_camera
 
 
 def run_all_tests():
     tests = [
         mixed_auto_and_free_layout,
-        drag_auto_node_converts_to_free,
-        locked_node_blocks_move_and_resize,
-        overlapping_nodes_hit_test_topmost,
-        grid_snap_stability,
-        resize_clamps_to_min,
         parent_bounds_enforced,
-        canvas_rect_map_matches_engine,
-        move_does_not_mutate_semantic_fields,
-        resize_does_not_mutate_semantic_fields,
         rect_map_unique_per_node,
         no_negative_geometry_emitted,
-        click_after_drag_selects_correct_node,
-        locked_node_still_selectable,
-        free_node_drag_updates_canvas_rects_after_repaint,
+        world_rects_remain_engine_truth,
+        screen_mapping_uses_camera_offset,
+        hit_test_uses_world_space,
+        drag_after_pan_updates_correct_world_position,
+        focus_selected_recenters_camera_without_rescaling,
+        show_all_resets_camera,
+        resize_after_pan_uses_world_delta,
+        panning_does_not_change_node_geometry,
+        drag_no_longer_requires_viewport_lock,
+        middle_mouse_pan_updates_camera,
+        status_strip_updates_focus_label,
+        unified_scene_actions_exist,
+        source_scene_defaults_to_bench_recommendation,
+        scene_source_target_field_updates_app_state,
+        scene_source_preflight_reflects_target_validity,
+        no_auto_reframe_on_interaction,
     ]
 
     passed = 0

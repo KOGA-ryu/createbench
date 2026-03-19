@@ -191,8 +191,8 @@ def test_default_injection():
     assert props["text"] == "Button"
     assert props["x"] == 0
     assert props["y"] == 0
-    assert props["width"] == 200
-    assert props["height"] == 100
+    assert props["width"] == 80
+    assert props["height"] == 32
     assert props["min_width"] == 50
     assert props["min_height"] == 30
     assert props["max_width"] is None

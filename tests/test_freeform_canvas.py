@@ -60,8 +60,11 @@ def drag_sets_free_mode():
 
 def position_updates_on_drag():
     canvas, model, _selection = make_canvas()
-    document = model.create_node("document", {})
-    button = model.create_node("button", {"text": "Save"})
+    document = model.create_node("document", {"layout_mode": "auto"})
+    button = model.create_node(
+        "button",
+        {"text": "Save", "layout_mode": "free", "x": 120, "y": 120, "width": 200, "height": 96},
+    )
     model.add_node(model.root_id, document)
     model.add_node(document.id, button)
     canvas.show()
@@ -74,7 +77,8 @@ def position_updates_on_drag():
     canvas.mouseMoveEvent(_mouse_event(QMouseEvent.Type.MouseMove, moved))
     canvas.mouseReleaseEvent(_mouse_event(QMouseEvent.Type.MouseButtonRelease, moved))
 
-    assert button.properties["x"] != 0 or button.properties["y"] != 0
+    assert button.properties["x"] > 120
+    assert button.properties["y"] > 120
 
 
 def drag_auto_node_snaps_to_grid():
@@ -143,9 +147,9 @@ def auto_mode_ignored_when_free():
     canvas.repaint()
     APP.processEvents()
 
-    rect = canvas.node_rects[button.id]
-    assert rect.x() == 50
-    assert rect.y() == 70
+    rect = canvas.engine_rects[button.id]
+    assert rect["x"] == 50
+    assert rect["y"] == 70
 
 
 def multiple_nodes_independent_positions():
@@ -171,6 +175,34 @@ def multiple_nodes_independent_positions():
     assert first_rect.topLeft() != second_rect.topLeft()
 
 
+def screen_rects_follow_camera_without_changing_world_rects():
+    canvas, model, _selection = make_canvas()
+    document = model.create_node("document", {"layout_mode": "auto"})
+    button = model.create_node(
+        "button",
+        {"layout_mode": "free", "x": 720, "y": 400, "width": 240, "height": 96},
+    )
+    model.add_node(model.root_id, document)
+    model.add_node(document.id, button)
+    canvas.show()
+    canvas.repaint()
+    APP.processEvents()
+
+    engine_rect = canvas.engine_rects[button.id]
+    world_rect = canvas.node_rects[button.id]
+    display_rect = canvas.screen_rects[button.id]
+    assert engine_rect["width"] == 240
+    assert display_rect.width() == engine_rect["width"]
+    canvas.camera_x = 120
+    canvas.camera_y = 60
+    canvas.repaint()
+    APP.processEvents()
+    shifted_display_rect = canvas.screen_rects[button.id]
+    assert canvas.node_rects[button.id] == world_rect
+    assert shifted_display_rect.x() == display_rect.x() - 120
+    assert shifted_display_rect.y() == display_rect.y() - 60
+
+
 def run_all_tests():
     tests = [
         drag_sets_free_mode,
@@ -179,6 +211,7 @@ def run_all_tests():
         resize_updates_dimensions,
         auto_mode_ignored_when_free,
         multiple_nodes_independent_positions,
+        screen_rects_follow_camera_without_changing_world_rects,
     ]
 
     passed = 0

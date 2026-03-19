@@ -48,12 +48,15 @@ class DSLBuilder:
         properties = dict(known)
         if unknown:
             properties["unknown"] = dict(unknown)
-        return {
+        result = {
             "id": node.id,
             "type": node.type,
             "properties": properties,
             "children": [self._build_node_json(child, mode) for child in self.model.get_children(node.id)],
         }
+        if getattr(node, "metadata", {}):
+            result["metadata"] = dict(node.metadata)
+        return result
 
     def _append_node_dsl(self, lines: list[str], node, mode: str, depth: int) -> None:
         indent = "  " * depth

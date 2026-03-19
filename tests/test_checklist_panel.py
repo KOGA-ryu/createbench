@@ -3,6 +3,7 @@ import sys
 from contextlib import redirect_stdout
 from pathlib import Path
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication
 
 
@@ -112,6 +113,58 @@ def export_succeeds_when_valid():
     assert "Export successful" in value
 
 
+def handoff_export_contains_visual_state():
+    state = AppState(str(CORE_SCHEMAS))
+    document = state.layout_model.create_node("document", {"layout_mode": "auto"})
+    button = state.layout_model.create_node("button", {"text": "Save", "layout_mode": "free", "x": 96, "y": 88})
+    state.layout_model.add_node(state.layout_model.root_id, document)
+    state.layout_model.add_node(document.id, button)
+    state.selection_state.set_selection(button.id)
+
+    window = MainWindow(state)
+    out = io.StringIO()
+    with redirect_stdout(out):
+        window.handoff_button.clicked.emit()
+    value = out.getvalue()
+    assert '"selection": "button_1"' in value
+    assert '"rect_map"' in value
+    assert '"viewport"' in value
+    assert '"draw_order"' in value
+    assert '"checklist"' in value
+
+
+def tool_sections_start_closed():
+    state = AppState(str(CORE_SCHEMAS))
+    window = MainWindow(state)
+    assert window.active_tool_sections == []
+    assert all(not button.isChecked() for button in window.section_toggle_buttons.values())
+    assert window.left_toolbar is not None
+    assert window.tool_workspace_window is not None
+
+
+def tool_sections_open_in_click_order():
+    state = AppState(str(CORE_SCHEMAS))
+    window = MainWindow(state)
+
+    window.section_toggle_buttons["Geometry"].click()
+    window.section_toggle_buttons["Components"].click()
+    window.section_toggle_buttons["Inspector"].click()
+    window.section_toggle_buttons["Project"].click()
+
+    assert window.active_tool_sections == ["Geometry", "Components", "Inspector", "Project"]
+    assert window.section_cards["Geometry"].parent() is not None
+    assert window.section_cards["Components"].parent() is not None
+    assert window.section_cards["Inspector"].parent() is not None
+    assert window.section_cards["Project"].parent() is not None
+    assert window.tool_workspace_window.isVisible()
+
+
+def tool_workspace_is_floating_tool_window():
+    state = AppState(str(CORE_SCHEMAS))
+    window = MainWindow(state)
+    assert bool(window.tool_workspace_window.windowFlags() & Qt.WindowType.Tool)
+
+
 def run_all_tests():
     tests = [
         checklist_updates_on_selection,
@@ -120,6 +173,10 @@ def run_all_tests():
         severity_tags_colored,
         export_blocked_when_errors,
         export_succeeds_when_valid,
+        handoff_export_contains_visual_state,
+        tool_sections_start_closed,
+        tool_sections_open_in_click_order,
+        tool_workspace_is_floating_tool_window,
     ]
 
     passed = 0

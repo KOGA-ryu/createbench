@@ -24,6 +24,8 @@ class ChecklistPanel(QWidget):
         layout.addWidget(self.other_label)
         layout.addWidget(self.other_list)
 
+        self.model.subscribe(self.update_checklist)
+        self.destroyed.connect(lambda _obj=None: self.model.unsubscribe(self.update_checklist))
         self.selection_state.subscribe(lambda _selected_id: self.update_checklist())
 
     def update_checklist(self):
