@@ -4,16 +4,53 @@ import json
 from pathlib import Path
 
 from PySide6.QtCore import QEvent
+from PySide6.QtGui import QKeySequence, QShortcut
 from canvas.canvas_widget import CanvasWidget
 from checklist.checklist_panel import ChecklistPanel
-from core.scene_resolution import resolve_scene_state
 from export.dsl_builder import DSLBuilder
 from export.dsl_builder import DSL_VERSION
+from export.handoff_packet import build_handoff_packet
 from forms.component_form_builder import ComponentFormBuilder
 from inspector.inspector_panel import InspectorPanel
-from ui_extract_packet import load_packet as load_ui_extract_packet
-from ui_extract_packet import load_packet_alongside as load_ui_extract_packet_alongside
-from ui_extract_packet import load_packet_in_bench as load_ui_extract_packet_in_bench
+from scanner_ui_probe import validate_scanner_probe_target, validate_scanner_repo_root
+from ui.project_io_panel import ProjectIOPanel
+from ui.project_io_logic import (
+    default_scene_source_target_path,
+    recommended_scene_action,
+    scene_action_context_text,
+    scene_action_hint_text,
+    scene_action_target_suffix,
+    scene_source_preflight_text,
+)
+from ui.scene_load_execution import (
+    extract_packet_alongside,
+    extract_packet_bench,
+    extract_packet_replace,
+    project_alongside,
+    project_bench,
+    project_replace,
+    scanner_alongside,
+    scanner_bench,
+    scanner_replace,
+)
+from ui.scene_action_routing import route_scene_action
+from ui.scene_source_selection import (
+    scene_source_target_path,
+    selected_scanner_probe_label,
+    selected_scanner_probe_target,
+    selected_scene_source,
+    selected_scene_source_label,
+)
+from ui.tool_workspace import ToolWorkspace
+from ui.windowing import (
+    build_selection_window,
+    close_selection_window,
+    close_floating_windows,
+    focus_selection_window,
+    position_selection_window,
+    position_tool_workspace_window,
+    sync_floating_windows,
+)
 from ui_extract_packet import validate_packet as validate_ui_extract_packet
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
@@ -29,12 +66,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from project_io import (
-    load_project,
-    load_project_alongside,
-    load_project_in_bench,
-    save_project,
-)
+from project_io import save_project
 
 
 class MainWindow(QMainWindow):
@@ -54,7 +86,6 @@ class MainWindow(QMainWindow):
         self.section_contents: dict[str, QWidget] = {}
         self.active_tool_sections: list[str] = []
         self.section_display_names = {
-            "Inspector": "Selection",
             "Geometry": "Geometry",
             "Components": "Components",
             "Templates": "Scaffolds",
@@ -65,7 +96,9 @@ class MainWindow(QMainWindow):
         }
         self._build_ui()
         self.resize(1600, 1000)
-        self._position_tool_workspace_window()
+        position_selection_window(self, getattr(self, "selection_window", None))
+        position_tool_workspace_window(self, getattr(self, "tool_workspace_window", None))
+        self._install_hotkeys()
 
     def _build_ui(self):
         """Create the canvas-centered window and register the available tool sections."""
@@ -77,6 +110,7 @@ class MainWindow(QMainWindow):
             self.app_state.layout_model,
             self.app_state.selection_state,
             self.app_state.property_registry,
+            focus_node_callback=self._focus_node_in_canvas,
         )
         checklist_panel = ChecklistPanel(
             self.app_state.layout_model,
@@ -93,13 +127,28 @@ class MainWindow(QMainWindow):
         self.save_target_label.setObjectName("save_target_label")
         self.scene_source_selector = QComboBox()
         self.scene_source_selector.setObjectName("scene_source_selector")
+        self.scene_source_selector.setStyleSheet(ToolWorkspace.project_input_style())
         self.scene_source_selector.addItem("Project JSON", "project")
         self.scene_source_selector.addItem("UI Extract Packet", "extract_packet")
+        self.scene_source_selector.addItem("Scanner Qt Probe", "scanner_repo")
         self.scene_source_selector.currentIndexChanged.connect(
             lambda _index: self._update_scene_source_target_field()
         )
+        self.scanner_probe_target_selector = QComboBox()
+        self.scanner_probe_target_selector.setObjectName("scanner_probe_target_selector")
+        self.scanner_probe_target_selector.setStyleSheet(ToolWorkspace.project_input_style())
+        self.scanner_probe_target_selector.addItem("Scanner Main Window", "main_window")
+        self.scanner_probe_target_selector.addItem("Scanner Profile Manager", "profile_manager")
+        current_scanner_target = self.app_state.get_scanner_probe_target()
+        target_index = self.scanner_probe_target_selector.findData(current_scanner_target)
+        if target_index >= 0:
+            self.scanner_probe_target_selector.setCurrentIndex(target_index)
+        self.scanner_probe_target_selector.currentIndexChanged.connect(
+            self._commit_scanner_probe_target
+        )
         self.scene_source_target_field = QLineEdit()
         self.scene_source_target_field.setObjectName("scene_source_target_field")
+        self.scene_source_target_field.setStyleSheet(ToolWorkspace.project_input_style())
         self.scene_source_target_field.editingFinished.connect(
             self._commit_scene_source_target
         )
@@ -195,45 +244,20 @@ class MainWindow(QMainWindow):
         components_layout.addLayout(component_layout)
         components_layout.addWidget(self.component_form_container)
 
-        project_section = QWidget()
-        project_layout = QVBoxLayout(project_section)
-        project_layout.setContentsMargins(0, 0, 0, 0)
-        project_layout.setSpacing(6)
-        project_layout.addWidget(
-            self._build_project_group(
-                "Save & Persist",
-                "project_save_group",
-                self.save_button,
-                self.save_target_label,
-            )
-        )
-        project_layout.addWidget(
-            self._build_project_group(
-                "Source Target",
-                "project_source_group",
-                self.scene_source_selector,
-                self.scene_source_target_field,
-                self.scene_source_preflight_label,
-            )
-        )
-        project_layout.addWidget(
-            self._build_project_group(
-                "Scene Actions",
-                "project_scene_actions_group",
-                self.scene_action_context_label,
-                self.scene_replace_button,
-                self.scene_alongside_button,
-                self.scene_bench_button,
-                self.scene_action_hint_label,
-            )
-        )
-        project_layout.addWidget(
-            self._build_project_group(
-                "Export",
-                "project_export_group",
-                self.handoff_button,
-                export_button,
-            )
+        project_section = ProjectIOPanel(
+            save_button=self.save_button,
+            save_target_label=self.save_target_label,
+            scene_source_selector=self.scene_source_selector,
+            scanner_probe_target_selector=self.scanner_probe_target_selector,
+            scene_source_target_field=self.scene_source_target_field,
+            scene_source_preflight_label=self.scene_source_preflight_label,
+            scene_action_context_label=self.scene_action_context_label,
+            scene_replace_button=self.scene_replace_button,
+            scene_alongside_button=self.scene_alongside_button,
+            scene_bench_button=self.scene_bench_button,
+            scene_action_hint_label=self.scene_action_hint_label,
+            handoff_button=self.handoff_button,
+            export_button=export_button,
         )
 
         validation_section = QWidget()
@@ -242,7 +266,6 @@ class MainWindow(QMainWindow):
         validation_layout.addWidget(checklist_panel)
 
         self.section_contents = {
-            "Inspector": inspector_panel,
             "Geometry": canvas_panel.geometry_tool,
             "Components": components_section,
             "Templates": templates_section,
@@ -252,9 +275,16 @@ class MainWindow(QMainWindow):
             "Project": project_section,
         }
 
-        self.tool_workspace_window = self._build_tool_workspace_window()
+        self.tool_workspace = ToolWorkspace(
+            self,
+            self.section_contents,
+            self.section_display_names,
+        )
+        self.selection_window = build_selection_window(self, inspector_panel)
+        self.selection_window.show()
+        self.tool_workspace_window = self.tool_workspace.workspace_window
         self.tool_workspace_window.show()
-        left_toolbar = self._build_left_toolbar()
+        left_toolbar = self.tool_workspace.tool_rail_widget
 
         center_container = QWidget()
         center_layout = QHBoxLayout(center_container)
@@ -276,6 +306,9 @@ class MainWindow(QMainWindow):
 
         self.setCentralWidget(center_container)
         self.left_toolbar = left_toolbar
+        self.section_toggle_buttons = self.tool_workspace.section_toggle_buttons
+        self.section_cards = self.tool_workspace.section_cards
+        self.active_tool_sections = self.tool_workspace.active_sections
         self.checklist_panel = checklist_panel
         self.inspector_panel = inspector_panel
         self.export_button = export_button
@@ -295,33 +328,18 @@ class MainWindow(QMainWindow):
         ):
             button.installEventFilter(self)
 
-    def _build_project_group(
-        self, title: str, object_name: str, *widgets: QWidget
-    ) -> QFrame:
-        group = QFrame()
-        group.setObjectName(object_name)
-        group.setFrameShape(QFrame.Shape.StyledPanel)
-        group.setStyleSheet(self._project_group_style(object_name))
-        layout = QVBoxLayout(group)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(4)
-        title_label = QLabel(title)
-        title_label.setObjectName(f"{object_name}_title")
-        title_label.setStyleSheet(self._project_group_title_style(object_name))
-        layout.addWidget(title_label)
-        for widget in widgets:
-            layout.addWidget(widget)
-        return group
+    def _install_hotkeys(self):
+        self.selection_window_close_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
+        self.selection_window_close_shortcut.setContext(Qt.ShortcutContext.ApplicationShortcut)
+        self.selection_window_close_shortcut.activated.connect(self._handle_escape_dismissal)
 
-    def _project_group_title_style(self, object_name: str) -> str:
-        if object_name == "project_scene_actions_group":
-            return "font-weight: 700; color: #111827;"
-        return "font-weight: 600; color: #374151; font-size: 11px;"
+        self.canvas_focus_shortcut = QShortcut(QKeySequence("Ctrl+1"), self)
+        self.canvas_focus_shortcut.setContext(Qt.ShortcutContext.ApplicationShortcut)
+        self.canvas_focus_shortcut.activated.connect(self._focus_canvas_surface)
 
-    def _project_group_style(self, object_name: str) -> str:
-        if object_name == "project_scene_actions_group":
-            return "QFrame { background: #f8fafc; border: 1px solid #cbd5e1; }"
-        return "QFrame { background: #ffffff; border: 1px solid #e5e7eb; }"
+        self.selection_window_focus_shortcut = QShortcut(QKeySequence("Ctrl+2"), self)
+        self.selection_window_focus_shortcut.setContext(Qt.ShortcutContext.ApplicationShortcut)
+        self.selection_window_focus_shortcut.activated.connect(self._focus_selection_window)
 
     def _handle_export(self):
         """Print DSL export when the checklist allows it."""
@@ -337,29 +355,13 @@ class MainWindow(QMainWindow):
 
     def _build_handoff_packet(self):
         """Capture selection, camera, layout, and export state for AI handoff."""
-        canvas_rect = self.canvas_panel.authored_canvas_rect()
-        rect_map = self.canvas_panel.layout_engine.compute_layout(
-            self.app_state.layout_model.root_id, canvas_rect
+        return build_handoff_packet(
+            layout_model=self.app_state.layout_model,
+            selection_state=self.app_state.selection_state,
+            checklist_engine=self.app_state.checklist_engine,
+            canvas_panel=self.canvas_panel,
+            builder=self.builder,
         )
-        checklist = self.app_state.checklist_engine.run()
-        packet = {
-            "selection": self.app_state.selection_state.get_selection(),
-            "scene_metadata": dict(getattr(self.app_state.layout_model, "scene_metadata", {})),
-            "canvas_rect": canvas_rect,
-            "viewport": self.canvas_panel.get_viewport_state(),
-            "draw_order": list(self.canvas_panel.layout_engine.draw_order),
-            "rect_map": rect_map,
-            "checklist": checklist,
-            "project_json": None,
-            "dsl": None,
-            "export_error": None,
-        }
-        try:
-            packet["project_json"] = self.builder.build_json(mode="expanded")
-            packet["dsl"] = self.builder.build_dsl(mode="expanded")
-        except Exception as exc:
-            packet["export_error"] = str(exc)
-        return packet
 
     def _handle_add_template(self):
         """Insert the selected scaffold into the current project."""
@@ -388,28 +390,31 @@ class MainWindow(QMainWindow):
         print("Project saved")
 
     def _selected_scene_source(self) -> str:
-        return str(self.scene_source_selector.currentData() or "project")
+        return selected_scene_source(self.scene_source_selector)
 
     def _scene_source_target_path(self) -> str:
-        return self.app_state.get_scene_source_target(self._selected_scene_source())
+        return scene_source_target_path(self.app_state, self._selected_scene_source())
 
     def _selected_scene_source_label(self) -> str:
-        return "UI extract packet" if self._selected_scene_source() == "extract_packet" else "project JSON"
+        return selected_scene_source_label(
+            self._selected_scene_source(),
+            self._selected_scanner_probe_label(),
+        )
+
+    def _selected_scanner_probe_target(self) -> str:
+        return selected_scanner_probe_target(self.scanner_probe_target_selector)
+
+    def _selected_scanner_probe_label(self) -> str:
+        return selected_scanner_probe_label(self._selected_scanner_probe_target())
 
     def _default_scene_source_target_path(self) -> str:
-        defaults = {
-            "project": "project.json",
-            "extract_packet": "ui_extract_packet.json",
-        }
-        return defaults.get(self._selected_scene_source(), "")
+        return default_scene_source_target_path(self._selected_scene_source())
 
     def _scene_action_target_suffix(self) -> str:
-        target_path = self._scene_source_target_path() or ""
-        if not target_path:
-            return ""
-        if target_path == self._default_scene_source_target_path():
-            return ""
-        return f" at {target_path}"
+        return scene_action_target_suffix(
+            self._scene_source_target_path() or "",
+            self._default_scene_source_target_path(),
+        )
 
     def _update_save_target_label(self) -> None:
         self.save_target_label.setText(
@@ -418,6 +423,9 @@ class MainWindow(QMainWindow):
 
     def _update_scene_source_target_field(self) -> None:
         self.scene_source_target_field.setText(self._scene_source_target_path())
+        self.scanner_probe_target_selector.setVisible(
+            self._selected_scene_source() == "scanner_repo"
+        )
         self._update_scene_source_preflight_label()
         self._update_scene_action_enabled_state()
         self._apply_scene_action_recommendation()
@@ -431,33 +439,23 @@ class MainWindow(QMainWindow):
         self._update_save_target_label()
         self._update_scene_source_target_field()
 
+    def _commit_scanner_probe_target(self, _index: int) -> None:
+        self.app_state.set_scanner_probe_target(self._selected_scanner_probe_target())
+        self._apply_scene_action_recommendation()
+        self._update_scene_action_hint()
+
     def _update_scene_source_preflight_label(self) -> None:
         self.scene_source_preflight_label.setText(self._scene_source_preflight_text())
 
     def _scene_source_preflight_text(self) -> str:
-        target_path = Path(self._scene_source_target_path())
-        if not target_path.exists():
-            return "Preflight: missing target"
-        try:
-            with open(target_path, "r", encoding="utf-8") as handle:
-                payload = json.load(handle)
-        except Exception:
-            return "Preflight: unreadable file"
-
-        if self._selected_scene_source() == "extract_packet":
-            try:
-                validate_ui_extract_packet(payload)
-            except Exception:
-                return "Preflight: invalid extract packet"
-            return "Preflight: valid extract packet"
-
-        if not isinstance(payload, dict):
-            return "Preflight: invalid project file"
-        if payload.get("version") != DSL_VERSION:
-            return "Preflight: invalid project version"
-        if "data" not in payload:
-            return "Preflight: invalid project file"
-        return "Preflight: valid project file"
+        return scene_source_preflight_text(
+            selected_source=self._selected_scene_source(),
+            target_path=self._scene_source_target_path(),
+            scanner_probe_target=self._selected_scanner_probe_target(),
+            validate_scanner_repo_root=validate_scanner_repo_root,
+            validate_scanner_probe_target=validate_scanner_probe_target,
+            validate_ui_extract_packet=validate_ui_extract_packet,
+        )
 
     def _scene_source_is_actionable(self) -> bool:
         return self._scene_source_preflight_text().startswith("Preflight: valid")
@@ -469,34 +467,20 @@ class MainWindow(QMainWindow):
         self.scene_bench_button.setEnabled(enabled)
 
     def _scene_action_hint_text(self, action: str) -> str:
-        hints = {
-            "replace": "Replace: clears the current scene and loads the selected source into it",
-            "alongside": "Alongside: preserves the current scene and adds the selected source beside it",
-            "bench": "Recommended: Bench preserves the current scene and opens the selected source in an isolated bench session",
-        }
-        return hints[action]
+        return scene_action_hint_text(action)
 
     def _recommended_scene_action(self) -> str:
-        resolved_scene = resolve_scene_state(
+        return recommended_scene_action(
             getattr(self.app_state.layout_model, "scene_metadata", {})
         )
-        if resolved_scene["resolved_mode"] in {"source", "bench"}:
-            return "bench"
-        return "alongside"
 
     def _scene_action_context_text(self) -> str:
-        if not self._scene_source_is_actionable():
-            return "Scene actions are unavailable until the selected source passes preflight."
-        resolved_scene = resolve_scene_state(
-            getattr(self.app_state.layout_model, "scene_metadata", {})
+        return scene_action_context_text(
+            actionable=self._scene_source_is_actionable(),
+            scene_metadata=getattr(self.app_state.layout_model, "scene_metadata", {}),
+            source_label=self._selected_scene_source_label(),
+            target_suffix=self._scene_action_target_suffix(),
         )
-        source_label = self._selected_scene_source_label()
-        target_suffix = self._scene_action_target_suffix()
-        if resolved_scene["resolved_mode"] == "source":
-            return f"Current scene is source-backed, so bench is the safest isolated path for incoming {source_label}{target_suffix}."
-        if resolved_scene["resolved_mode"] == "bench":
-            return f"Current scene is bench-focused, so bench keeps incoming {source_label}{target_suffix} isolated."
-        return f"Current scene is design-only, so alongside keeps existing work visible while adding incoming {source_label}{target_suffix}."
 
     def _apply_scene_action_recommendation(self) -> None:
         recommended = self._recommended_scene_action()
@@ -522,24 +506,33 @@ class MainWindow(QMainWindow):
 
     def _handle_scene_replace(self):
         self._update_scene_action_hint("replace")
-        if self._selected_scene_source() == "extract_packet":
-            self._handle_load_extract_packet_replace()
-        else:
-            self._handle_load_replace()
+        self._dispatch_scene_action("replace")
 
     def _handle_scene_import_alongside(self):
         self._update_scene_action_hint("alongside")
-        if self._selected_scene_source() == "extract_packet":
-            self._handle_load_extract_packet_alongside()
-        else:
-            self._handle_load_alongside()
+        self._dispatch_scene_action("alongside")
 
     def _handle_scene_open_in_bench(self):
         self._update_scene_action_hint("bench")
-        if self._selected_scene_source() == "extract_packet":
-            self._handle_load_extract_packet_in_bench()
-        else:
-            self._handle_load_in_bench()
+        self._dispatch_scene_action("bench")
+
+    def _dispatch_scene_action(self, action: str) -> None:
+        route = route_scene_action(self._selected_scene_source(), action)
+        handlers = {
+            "project_replace": self._handle_load_replace,
+            "project_alongside": self._handle_load_alongside,
+            "project_bench": self._handle_load_in_bench,
+            "extract_packet_replace": self._handle_load_extract_packet_replace,
+            "extract_packet_alongside": self._handle_load_extract_packet_alongside,
+            "extract_packet_bench": self._handle_load_extract_packet_in_bench,
+            "scanner_replace": self._handle_load_scanner_probe_replace,
+            "scanner_alongside": self._handle_load_scanner_probe_alongside,
+            "scanner_bench": self._handle_load_scanner_probe_in_bench,
+        }
+        handler = handlers.get(route)
+        if handler is None:
+            raise ValueError(f"Unknown scene action route: {route}")
+        handler()
 
     def eventFilter(self, watched, event):
         if watched is self.scene_replace_button and event.type() in {QEvent.Type.FocusIn, QEvent.Type.Enter}:
@@ -552,84 +545,108 @@ class MainWindow(QMainWindow):
 
     def _handle_load_replace(self):
         """Replace the current scene with the default local project file."""
-        load_project(
-            self.app_state.layout_model,
-            self.app_state.property_registry,
-            self.app_state.get_scene_source_target("project"),
+        project_replace(
+            layout_model=self.app_state.layout_model,
+            property_registry=self.app_state.property_registry,
+            selection_state=self.app_state.selection_state,
+            canvas_panel=self.canvas_panel,
+            checklist_panel=self.checklist_panel,
+            target_path=self.app_state.get_scene_source_target("project"),
         )
-        self.app_state.selection_state.clear_selection()
-        self.canvas_panel.update()
-        self.checklist_panel.update_checklist()
         print("Project replaced current scene")
 
     def _handle_load_alongside(self):
         """Import the default local project file alongside the current scene."""
-        created_root_ids = load_project_alongside(
-            self.app_state.layout_model,
-            self.app_state.property_registry,
-            self.app_state.get_scene_source_target("project"),
+        project_alongside(
+            layout_model=self.app_state.layout_model,
+            property_registry=self.app_state.property_registry,
+            selection_state=self.app_state.selection_state,
+            canvas_panel=self.canvas_panel,
+            checklist_panel=self.checklist_panel,
+            target_path=self.app_state.get_scene_source_target("project"),
         )
-        if created_root_ids:
-            self.app_state.selection_state.set_selection(created_root_ids[0])
-        else:
-            self.app_state.selection_state.clear_selection()
-        self.canvas_panel.update()
-        self.checklist_panel.update_checklist()
         print("Project imported alongside current scene")
 
     def _handle_load_in_bench(self):
         """Open the default local project file in bench."""
-        created_root_ids = load_project_in_bench(
-            self.app_state.layout_model,
-            self.app_state.property_registry,
-            self.app_state.get_scene_source_target("project"),
+        project_bench(
+            layout_model=self.app_state.layout_model,
+            property_registry=self.app_state.property_registry,
+            selection_state=self.app_state.selection_state,
+            canvas_panel=self.canvas_panel,
+            checklist_panel=self.checklist_panel,
+            target_path=self.app_state.get_scene_source_target("project"),
         )
-        if created_root_ids:
-            self.app_state.selection_state.set_selection(created_root_ids[0])
-        else:
-            self.app_state.selection_state.clear_selection()
-        self.canvas_panel.update()
-        self.checklist_panel.update_checklist()
         print("Project opened in bench")
 
     def _handle_load_extract_packet_replace(self):
         """Replace the current scene with the default local UI extract packet."""
-        load_ui_extract_packet(
-            self.app_state.layout_model,
-            self.app_state.get_scene_source_target("extract_packet"),
+        extract_packet_replace(
+            layout_model=self.app_state.layout_model,
+            selection_state=self.app_state.selection_state,
+            canvas_panel=self.canvas_panel,
+            checklist_panel=self.checklist_panel,
+            target_path=self.app_state.get_scene_source_target("extract_packet"),
         )
-        self.app_state.selection_state.clear_selection()
-        self.canvas_panel.update()
-        self.checklist_panel.update_checklist()
         print("Extract packet replaced current scene")
 
     def _handle_load_extract_packet_alongside(self):
         """Import the default local UI extract packet alongside the current scene."""
-        created_root_ids = load_ui_extract_packet_alongside(
-            self.app_state.layout_model,
-            self.app_state.get_scene_source_target("extract_packet"),
+        extract_packet_alongside(
+            layout_model=self.app_state.layout_model,
+            selection_state=self.app_state.selection_state,
+            canvas_panel=self.canvas_panel,
+            checklist_panel=self.checklist_panel,
+            target_path=self.app_state.get_scene_source_target("extract_packet"),
         )
-        if created_root_ids:
-            self.app_state.selection_state.set_selection(created_root_ids[0])
-        else:
-            self.app_state.selection_state.clear_selection()
-        self.canvas_panel.update()
-        self.checklist_panel.update_checklist()
         print("Extract packet imported alongside current scene")
 
     def _handle_load_extract_packet_in_bench(self):
         """Open the default local UI extract packet as a bench projection."""
-        created_root_ids = load_ui_extract_packet_in_bench(
-            self.app_state.layout_model,
-            self.app_state.get_scene_source_target("extract_packet"),
+        extract_packet_bench(
+            layout_model=self.app_state.layout_model,
+            selection_state=self.app_state.selection_state,
+            canvas_panel=self.canvas_panel,
+            checklist_panel=self.checklist_panel,
+            target_path=self.app_state.get_scene_source_target("extract_packet"),
         )
-        if created_root_ids:
-            self.app_state.selection_state.set_selection(created_root_ids[0])
-        else:
-            self.app_state.selection_state.clear_selection()
-        self.canvas_panel.update()
-        self.checklist_panel.update_checklist()
         print("Extract packet opened in bench")
+
+    def _handle_load_scanner_probe_replace(self):
+        """Replace the current scene with the probed scanner main window."""
+        scanner_replace(
+            layout_model=self.app_state.layout_model,
+            selection_state=self.app_state.selection_state,
+            canvas_panel=self.canvas_panel,
+            checklist_panel=self.checklist_panel,
+            target_path=self.app_state.get_scene_source_target("scanner_repo"),
+            probe_target=self._selected_scanner_probe_target(),
+        )
+        print("Scanner probe replaced current scene")
+
+    def _handle_load_scanner_probe_alongside(self):
+        """Import the probed scanner main window alongside the current scene."""
+        scanner_alongside(
+            layout_model=self.app_state.layout_model,
+            selection_state=self.app_state.selection_state,
+            canvas_panel=self.canvas_panel,
+            checklist_panel=self.checklist_panel,
+            target_path=self.app_state.get_scene_source_target("scanner_repo"),
+            probe_target=self._selected_scanner_probe_target(),
+        )
+        print("Scanner probe imported alongside current scene")
+
+    def _handle_load_scanner_probe_in_bench(self):
+        """Open the probed scanner main window in bench."""
+        scanner_bench(
+            layout_model=self.app_state.layout_model,
+            selection_state=self.app_state.selection_state,
+            canvas_panel=self.canvas_panel,
+            checklist_panel=self.checklist_panel,
+            target_path=self.app_state.get_scene_source_target("scanner_repo"),
+            probe_target=self._selected_scanner_probe_target(),
+        )
+        print("Scanner probe opened in bench")
 
     def _show_component_form(self):
         """Render the generated component form for the selected component type."""
@@ -637,6 +654,27 @@ class MainWindow(QMainWindow):
         self._clear_component_form()
         form = self.component_form_builder.build_form(component_type, self._handle_component_submit)
         self.component_form_layout.addWidget(form)
+
+    def _focus_node_in_canvas(self, node_id: str):
+        if not node_id:
+            return
+        self.app_state.selection_state.set_selection(node_id)
+        self.canvas_panel.focus_selected_node()
+
+    def _handle_escape_dismissal(self):
+        close_selection_window(getattr(self, "selection_window", None))
+
+    def _focus_canvas_surface(self):
+        self.activateWindow()
+        self.raise_()
+        self.canvas_panel.setFocus(Qt.FocusReason.ShortcutFocusReason)
+
+    def _focus_selection_window(self):
+        focus_selection_window(
+            self,
+            getattr(self, "selection_window", None),
+            getattr(self, "inspector_panel", None),
+        )
 
     def _handle_component_submit(self, payload):
         """Create a component from the submitted form payload."""
@@ -658,113 +696,32 @@ class MainWindow(QMainWindow):
         with open(templates_path, "r", encoding="utf-8") as handle:
             return json.load(handle)
 
-    def _build_tool_workspace_window(self):
-        """Create the floating window that hosts opened tool sections."""
-        window = QWidget(self, Qt.WindowType.Tool)
-        window.setWindowTitle("Tool Workspace")
-        layout = QVBoxLayout(window)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(8)
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.Shape.NoFrame)
-        content = QWidget()
-        self.left_tool_stack = QVBoxLayout(content)
-        self.left_tool_stack.setContentsMargins(0, 0, 0, 0)
-        self.left_tool_stack.setSpacing(8)
-        self.left_tool_stack.addStretch()
-        scroll.setWidget(content)
-        layout.addWidget(scroll, 1)
-        window.resize(340, 720)
-        return window
-
-    def _build_left_toolbar(self):
-        """Create the compact left rail of tool section toggles."""
-        panel = QWidget()
-        layout = QVBoxLayout(panel)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(6)
-        layout.addWidget(QLabel("Tools"))
-        section_order = [
-            "Inspector",
-            "Geometry",
-            "Components",
-            "Templates",
-            "Structure",
-            "View",
-            "Validation",
-            "Project",
-        ]
-        for section_name in section_order:
-            button = QToolButton()
-            button.setText(self.section_display_names[section_name])
-            button.setCheckable(True)
-            button.setChecked(False)
-            button.setArrowType(Qt.ArrowType.RightArrow)
-            button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-            button.toggled.connect(
-                lambda checked, name=section_name: self._toggle_tool_section(name, checked)
-            )
-            self.section_toggle_buttons[section_name] = button
-            layout.addWidget(button)
-        layout.addStretch()
-        return panel
-
-    def _toggle_tool_section(self, section_name: str, checked: bool):
-        button = self.section_toggle_buttons[section_name]
-        button.setArrowType(Qt.ArrowType.DownArrow if checked else Qt.ArrowType.RightArrow)
-        if checked:
-            if section_name not in self.active_tool_sections:
-                self.active_tool_sections.append(section_name)
-        else:
-            if section_name in self.active_tool_sections:
-                self.active_tool_sections.remove(section_name)
-        self._rebuild_left_tool_stack()
-
-    def _rebuild_left_tool_stack(self):
-        while self.left_tool_stack.count() > 1:
-            item = self.left_tool_stack.takeAt(0)
-            widget = item.widget()
-            if widget is not None:
-                widget.setParent(None)
-
-        for section_name in self.active_tool_sections:
-            card = self.section_cards.get(section_name)
-            if card is None:
-                card = self._make_section_card(section_name, self.section_contents[section_name])
-                self.section_cards[section_name] = card
-            self.left_tool_stack.insertWidget(self.left_tool_stack.count() - 1, card)
-        if self.active_tool_sections:
-            self.tool_workspace_window.show()
-            self.tool_workspace_window.raise_()
-
-    def _make_section_card(self, title: str, content_widget: QWidget):
-        card = QFrame()
-        card.setFrameShape(QFrame.Shape.StyledPanel)
-        layout = QVBoxLayout(card)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(6)
-        header = QLabel(self.section_display_names.get(title, title))
-        layout.addWidget(header)
-        content_widget.setParent(card)
-        layout.addWidget(content_widget)
-        return card
-
     def _position_tool_workspace_window(self):
-        if not hasattr(self, "tool_workspace_window"):
-            return
-        frame = self.frameGeometry()
-        self.tool_workspace_window.move(frame.topLeft().x() + 210, frame.topLeft().y() + 80)
+        position_tool_workspace_window(
+            self,
+            getattr(self, "tool_workspace_window", None),
+        )
+
+    def _position_selection_window(self):
+        position_selection_window(
+            self,
+            getattr(self, "selection_window", None),
+        )
 
     def _update_canvas_status(self, text: str):
         self.canvas_status_label.setText(text)
 
     def moveEvent(self, event):
         super().moveEvent(event)
-        if hasattr(self, "tool_workspace_window") and not self.tool_workspace_window.isHidden():
-            self._position_tool_workspace_window()
+        sync_floating_windows(
+            self,
+            getattr(self, "selection_window", None),
+            getattr(self, "tool_workspace_window", None),
+        )
 
     def closeEvent(self, event):
-        if hasattr(self, "tool_workspace_window"):
-            self.tool_workspace_window.close()
+        close_floating_windows(
+            getattr(self, "selection_window", None),
+            getattr(self, "tool_workspace_window", None),
+        )
         super().closeEvent(event)

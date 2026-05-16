@@ -23,7 +23,9 @@ class AppState:
         self.scene_source_targets = {
             "project": "project.json",
             "extract_packet": "ui_extract_packet.json",
+            "scanner_repo": "/Users/kogaryu/dev/scanner",
         }
+        self.scanner_probe_target = "main_window"
         self._locked = True
 
     def get_selected_node(self):
@@ -42,3 +44,9 @@ class AppState:
         if source_type not in self.scene_source_targets:
             raise ValueError(f"Unknown scene source type: {source_type}")
         self.scene_source_targets[source_type] = str(target_path)
+
+    def get_scanner_probe_target(self) -> str:
+        return str(self.scanner_probe_target)
+
+    def set_scanner_probe_target(self, target: str) -> None:
+        self.scanner_probe_target = str(target)

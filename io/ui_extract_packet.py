@@ -177,6 +177,8 @@ def _build_node_metadata(
 ) -> dict[str, object]:
     metadata = {
         "source": deepcopy(packet_node["source"]),
+        "layout_hints": deepcopy(packet_node["layout_hints"]),
+        "render_hints": deepcopy(packet_node["render_hints"]),
         "trust": deepcopy(packet_node["trust"]),
         "provenance": {
             "representation_origin": packet_node["trust"]["representation_origin"],

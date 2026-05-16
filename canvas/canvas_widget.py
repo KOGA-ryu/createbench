@@ -6,6 +6,7 @@ from PySide6.QtWidgets import QFrame, QGridLayout, QLabel, QLineEdit, QWidget
 
 from canvas.interaction_controller import InteractionController
 from canvas.resize_handles import ResizeHandles
+from canvas.scanner_renderer import ScannerRenderer
 from core.node_resolution import resolve_node_state
 from core.scene_resolution import resolve_scene_state
 from engine.layout_engine import LayoutEngine
@@ -25,6 +26,9 @@ class CanvasWidget(QWidget):
         "sidebar",
         "main",
         "panel",
+        "container",
+        "tool_window",
+        "dialog",
     }
 
     def __init__(self, layout_model, selection_state):
@@ -33,6 +37,7 @@ class CanvasWidget(QWidget):
         self.selection_state = selection_state
         self.controller = InteractionController(layout_model, selection_state)
         self.resize_handles = ResizeHandles(layout_model)
+        self.scanner_renderer = ScannerRenderer(self)
         self.layout_engine = LayoutEngine(layout_model)
         self.node_rects: dict[str, QRect] = {}
         self.screen_rects: dict[str, QRect] = {}
@@ -376,7 +381,14 @@ class CanvasWidget(QWidget):
         self.render_profiles[node.id] = profile
         role = str(profile["render_kind"])
         draw_fn = getattr(self, f"_draw_{role}", self._draw_generic_fallback)
+        painter.save()
+        render_hints = ((getattr(node, "metadata", {}) or {}).get("render_hints") or {})
+        if render_hints.get("visible") is False:
+            painter.setOpacity(0.28)
+        elif render_hints.get("enabled") is False:
+            painter.setOpacity(0.55)
         draw_fn(node, screen_rect, profile, painter)
+        painter.restore()
 
         is_selected = self.selection_state.get_selection() == node.id
         if is_selected:
@@ -508,6 +520,54 @@ class CanvasWidget(QWidget):
                 "selection_style": "outline",
                 "lock_indicator": True,
             },
+            "container": {
+                "render_kind": "container",
+                "fill_style": "container",
+                "show_header": True,
+                "show_body": True,
+                "show_border": True,
+                "show_label": True,
+                "content_alignment": "top",
+                "padding": 10,
+                "corner_radius": 4,
+                "border_weight": 1,
+                "draw_children_inside": True,
+                "overlay_layer": False,
+                "selection_style": "outline",
+                "lock_indicator": True,
+            },
+            "tool_window": {
+                "render_kind": "tool_window",
+                "fill_style": "tool_window",
+                "show_header": True,
+                "show_body": True,
+                "show_border": True,
+                "show_label": True,
+                "content_alignment": "top",
+                "padding": 12,
+                "corner_radius": 8,
+                "border_weight": 1,
+                "draw_children_inside": True,
+                "overlay_layer": False,
+                "selection_style": "outline",
+                "lock_indicator": True,
+            },
+            "dialog": {
+                "render_kind": "dialog",
+                "fill_style": "dialog",
+                "show_header": True,
+                "show_body": True,
+                "show_border": True,
+                "show_label": True,
+                "content_alignment": "top",
+                "padding": 12,
+                "corner_radius": 8,
+                "border_weight": 1,
+                "draw_children_inside": True,
+                "overlay_layer": False,
+                "selection_style": "outline",
+                "lock_indicator": True,
+            },
             "generic_fallback": {
                 "render_kind": "generic_fallback",
                 "fill_style": "generic",
@@ -526,6 +586,18 @@ class CanvasWidget(QWidget):
             },
         }
         return dict(profiles[role])
+
+    def _qt_class_name(self, node) -> str:
+        metadata = getattr(node, "metadata", {}) or {}
+        raw = metadata.get("raw", {}) or {}
+        provider_data = raw.get("provider_data", {}) or {}
+        return str(provider_data.get("qt_class") or "")
+
+    def _raw_provider_data(self, node) -> dict[str, object]:
+        metadata = getattr(node, "metadata", {}) or {}
+        raw = metadata.get("raw", {}) or {}
+        provider_data = raw.get("provider_data", {}) or {}
+        return dict(provider_data)
 
     def _inner_rect(self, screen_rect: QRect, inset: int = 6) -> QRect:
         inner = screen_rect.adjusted(inset, inset, -inset, -inset)
@@ -554,27 +626,80 @@ class CanvasWidget(QWidget):
     def _draw_input(self, node, screen_rect: QRect, profile: dict[str, object], painter: QPainter):
         self._current_paint_node_id = node.id
         inner = self._inner_rect(screen_rect)
+        qt_class = self._qt_class_name(node)
         pen = QPen(QColor("#6b7280"))
         pen.setWidth(int(profile["border_weight"]))
         painter.setPen(pen)
         painter.setBrush(QColor("#ffffff"))
         painter.drawRoundedRect(inner, int(profile["corner_radius"]), int(profile["corner_radius"]))
-        painter.setPen(QColor("#6b7280"))
-        label = node.properties.get("value") or node.properties.get("placeholder") or node.properties.get("title") or ""
-        painter.drawText(inner.adjusted(8, 0, -8, 0), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, str(label))
+        if qt_class == "QComboBox":
+            arrow_rect = QRect(inner.right() - 22, inner.top() + 1, 18, max(16, inner.height() - 2))
+            painter.fillRect(arrow_rect, QColor("#f3f4f6"))
+            painter.setPen(QColor("#4b5563"))
+            painter.drawText(arrow_rect, Qt.AlignmentFlag.AlignCenter, "v")
+        elif qt_class == "QCheckBox":
+            box = QRect(inner.left() + 8, inner.center().y() - 7, 14, 14)
+            painter.setBrush(QColor("#ffffff"))
+            painter.drawRect(box)
+            painter.setPen(QColor("#111111"))
+            label = node.properties.get("text") or node.properties.get("title") or "Option"
+            painter.drawText(inner.adjusted(28, 0, -8, 0), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, str(label))
+            return
+        elif qt_class == "QSpinBox":
+            stepper_rect = QRect(inner.right() - 22, inner.top() + 1, 18, max(16, inner.height() - 2))
+            painter.fillRect(stepper_rect, QColor("#f3f4f6"))
+            painter.setPen(QColor("#4b5563"))
+            painter.drawText(stepper_rect.adjusted(0, -4, 0, 0), Qt.AlignmentFlag.AlignCenter, "^")
+            painter.drawText(stepper_rect.adjusted(0, 6, 0, 0), Qt.AlignmentFlag.AlignCenter, "v")
+        value = node.properties.get("value") or node.properties.get("text")
+        placeholder = node.properties.get("placeholder") or node.properties.get("title") or ""
+        label = value or placeholder
+        painter.setPen(QColor("#111111") if value else QColor("#6b7280"))
+        painter.drawText(inner.adjusted(8, 0, -28, 0), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, str(label))
 
     def _draw_toolbar(self, node, screen_rect: QRect, profile: dict[str, object], painter: QPainter):
         self._current_paint_node_id = node.id
         inner = self._inner_rect(screen_rect)
+        qt_class = self._qt_class_name(node)
         pen = QPen(QColor("#9ca3af"))
         pen.setWidth(int(profile["border_weight"]))
         painter.setPen(pen)
         painter.setBrush(QColor("#e5e7eb"))
         painter.drawRect(inner)
+        if qt_class == "QStatusBar":
+            message = (
+                node.properties.get("text")
+                or node.properties.get("title")
+                or "Ready"
+            )
+            indicator = QRect(inner.x() + 8, inner.y() + 6, 10, max(10, inner.height() - 12))
+            painter.fillRect(indicator, QColor("#22c55e"))
+            painter.setPen(QColor("#334155"))
+            painter.drawText(
+                inner.adjusted(24, 0, -8, 0),
+                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+                str(message),
+            )
+            return
+        label = node.properties.get("title") or node.properties.get("text")
+        if label:
+            painter.setPen(QColor("#334155"))
+            painter.drawText(
+                inner.adjusted(8, 0, -8, 0),
+                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+                str(label),
+            )
 
     def _draw_sidebar(self, node, screen_rect: QRect, profile: dict[str, object], painter: QPainter):
         self._current_paint_node_id = node.id
         inner = self._inner_rect(screen_rect)
+        raw_provider_data = self._raw_provider_data(node)
+        if raw_provider_data.get("region_title") == "Profiles":
+            self.scanner_renderer.draw_profile_sidebar(node, inner, painter)
+            return
+        if self._qt_class_name(node) == "QListWidget":
+            self.scanner_renderer.draw_list_panel(node, inner, painter)
+            return
         pen = QPen(QColor("#9ca3af"))
         pen.setWidth(int(profile["border_weight"]))
         painter.setPen(pen)
@@ -585,6 +710,9 @@ class CanvasWidget(QWidget):
     def _draw_main(self, node, screen_rect: QRect, profile: dict[str, object], painter: QPainter):
         self._current_paint_node_id = node.id
         inner = self._inner_rect(screen_rect)
+        if self._raw_provider_data(node).get("region_title") == "Results":
+            self.scanner_renderer.draw_results_container(node, inner, painter)
+            return
         pen = QPen(QColor("#cbd5e1"))
         pen.setWidth(int(profile["border_weight"]))
         painter.setPen(pen)
@@ -595,12 +723,59 @@ class CanvasWidget(QWidget):
     def _draw_panel(self, node, screen_rect: QRect, profile: dict[str, object], painter: QPainter):
         self._current_paint_node_id = node.id
         inner = self._inner_rect(screen_rect)
+        qt_class = self._qt_class_name(node)
+        if qt_class == "QTableWidget":
+            self.scanner_renderer.draw_table_panel(node, inner, painter)
+            return
+        if qt_class == "QTextEdit":
+            self.scanner_renderer.draw_text_area_panel(node, inner, painter)
+            return
         pen = QPen(QColor("#94a3b8"))
         pen.setWidth(int(profile["border_weight"]))
         painter.setPen(pen)
         painter.setBrush(QColor("#ffffff"))
         painter.drawRoundedRect(inner, int(profile["corner_radius"]), int(profile["corner_radius"]))
         self._draw_header_label(node, inner, painter)
+
+    def _draw_container(self, node, screen_rect: QRect, profile: dict[str, object], painter: QPainter):
+        self._current_paint_node_id = node.id
+        inner = self._inner_rect(screen_rect)
+        raw_provider_data = self._raw_provider_data(node)
+        if raw_provider_data.get("region_title") == "Profile Form":
+            self.scanner_renderer.draw_form_container(node, inner, painter)
+            return
+        if raw_provider_data.get("region_title") == "Controls":
+            self.scanner_renderer.draw_controls_container(node, inner, painter)
+            return
+        if raw_provider_data.get("region_title") == "Details":
+            self.scanner_renderer.draw_details_container(node, inner, painter)
+            return
+        painter.setPen(QPen(QColor("#cbd5e1"), int(profile["border_weight"]), Qt.PenStyle.DashLine))
+        painter.setBrush(QColor("#f8fafc"))
+        painter.drawRoundedRect(inner, int(profile["corner_radius"]), int(profile["corner_radius"]))
+        self._draw_header_label(node, inner, painter)
+
+    def _draw_tool_window(self, node, screen_rect: QRect, profile: dict[str, object], painter: QPainter):
+        self._current_paint_node_id = node.id
+        inner = self._inner_rect(screen_rect)
+        painter.setPen(QPen(QColor("#64748b"), int(profile["border_weight"])))
+        painter.setBrush(QColor("#ffffff"))
+        painter.drawRoundedRect(inner, int(profile["corner_radius"]), int(profile["corner_radius"]))
+        header = QRect(inner.x(), inner.y(), inner.width(), min(30, inner.height()))
+        painter.fillRect(header, QColor("#e2e8f0"))
+        painter.setPen(QColor("#0f172a"))
+        painter.drawText(header.adjusted(10, 0, -10, 0), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, str(node.properties.get("title") or node.metadata.get("source", {}).get("symbol") or node.type))
+
+    def _draw_dialog(self, node, screen_rect: QRect, profile: dict[str, object], painter: QPainter):
+        self._current_paint_node_id = node.id
+        inner = self._inner_rect(screen_rect)
+        painter.setPen(QPen(QColor("#7c3aed"), int(profile["border_weight"])))
+        painter.setBrush(QColor("#ffffff"))
+        painter.drawRoundedRect(inner, int(profile["corner_radius"]), int(profile["corner_radius"]))
+        header = QRect(inner.x(), inner.y(), inner.width(), min(30, inner.height()))
+        painter.fillRect(header, QColor("#f3e8ff"))
+        painter.setPen(QColor("#3b0764"))
+        painter.drawText(header.adjusted(10, 0, -10, 0), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, str(node.properties.get("title") or node.metadata.get("source", {}).get("symbol") or node.type))
 
     def _draw_generic_fallback(self, node, screen_rect: QRect, profile: dict[str, object], painter: QPainter):
         self._current_paint_node_id = node.id
@@ -650,7 +825,7 @@ class CanvasWidget(QWidget):
         if resolved["resolved_mode"] == "bench":
             return {"text": "BENCH", "fill": QColor("#dbeafe"), "pen": QColor("#1d4ed8")}
         if resolved["editability"] == "editable" and resolved["origin_node_id"]:
-            return {"text": "FORK", "fill": QColor("#dcfce7"), "pen": QColor("#166534")}
+            return {"text": "FORKED", "fill": QColor("#dcfce7"), "pen": QColor("#166534")}
         return None
 
     def _draw_resolution_badge(self, node, painter: QPainter):
@@ -796,6 +971,10 @@ class CanvasWidget(QWidget):
                 resolved = resolve_node_state(node, getattr(self.model, "scene_metadata", {}))
                 if resolved["editability"] == "forkable":
                     self.interaction_message = "Inspect only: use Fork Here or Open In Bench to make an editable copy"
+                elif resolved["resolved_mode"] == "bench":
+                    self.interaction_message = "Bench copy: edits are isolated to the active bench session"
+                elif resolved["editability"] == "editable" and resolved["origin_node_id"]:
+                    self.interaction_message = "Forked working copy: edits apply to the copy, not source truth"
                 elif resolved["editability"] != "editable":
                     reason = resolved.get("reason") or "Editing is blocked for this node"
                     self.interaction_message = f"Inspect only: {reason}"
@@ -939,13 +1118,27 @@ class CanvasWidget(QWidget):
         bench_suffix = ""
         if scene_resolved["active_bench_session_id"]:
             bench_suffix = f" | BENCH: {scene_resolved['active_bench_session_id']}"
+        selection_suffix = ""
+        selected_id = self.selection_state.get_selection()
+        if selected_id and selected_id != self.model.root_id:
+            node = self.model.get_node(selected_id)
+            if node is not None:
+                resolved = resolve_node_state(node, getattr(self.model, "scene_metadata", {}))
+                if resolved["editability"] == "forkable":
+                    selection_suffix = " | WORKING: source truth"
+                elif resolved["resolved_mode"] == "bench":
+                    selection_suffix = " | WORKING: bench copy"
+                elif resolved["editability"] == "editable" and resolved["origin_node_id"]:
+                    selection_suffix = " | WORKING: forked copy"
+                elif resolved["editability"] == "editable":
+                    selection_suffix = " | WORKING: design node"
         message_suffix = ""
         if self.interaction_message:
             message_suffix = f" | NOTE: {self.interaction_message}"
         return (
             f"SNAP: ON | GRID: {self.layout_engine.grid_size} | "
             f"SCENE: {scene_resolved['origin']}/{scene_resolved['trust_level']} | "
-            f"MODE: {scene_resolved['resolved_mode']} | FOCUS: {focus}{bench_suffix}{message_suffix}"
+            f"MODE: {scene_resolved['resolved_mode']} | FOCUS: {focus}{selection_suffix}{bench_suffix}{message_suffix}"
         )
 
     def _notify_view_changed(self):

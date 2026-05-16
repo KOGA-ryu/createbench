@@ -117,6 +117,27 @@ def handoff_export_contains_visual_state():
     state = AppState(str(CORE_SCHEMAS))
     document = state.layout_model.create_node("document", {"layout_mode": "auto"})
     button = state.layout_model.create_node("button", {"text": "Save", "layout_mode": "free", "x": 96, "y": 88})
+    button.metadata = {
+        "source": {
+            "file": "ui/main_window.py",
+            "symbol": "save_button",
+            "line_start": 42,
+            "line_end": 42,
+            "source_id": "src_button_1",
+        },
+        "trust": {
+            "trust_level": "partial",
+            "representation_origin": "adapter",
+            "warnings": [],
+        },
+        "provenance": {
+            "representation_origin": "adapter",
+        },
+        "relationships": {
+            "communicates_to": ["dialog_confirm_exit"],
+            "depends_on": ["profile_state"],
+        },
+    }
     state.layout_model.add_node(state.layout_model.root_id, document)
     state.layout_model.add_node(document.id, button)
     state.selection_state.set_selection(button.id)
@@ -131,6 +152,27 @@ def handoff_export_contains_visual_state():
     assert '"viewport"' in value
     assert '"draw_order"' in value
     assert '"checklist"' in value
+    assert '"snapshot_handoff"' in value
+    assert '"node"' in value
+    assert '"type": "button"' in value
+    assert '"child_count": 0' in value
+    assert '"mode": "source"' in value
+    assert '"editability": "forkable"' in value
+    assert '"symbol": "save_button"' in value
+    assert '"layout_intent"' in value
+    assert '"layout_mode": "free"' in value
+    assert '"position"' in value
+    assert '"x": 96' in value
+    assert '"role_hints"' in value
+    assert '"text": "Save"' in value
+    assert '"label": "partial:adapter"' in value
+    assert '"relationships"' in value
+    assert '"parent": null' in value
+    assert '"children": []' in value
+    assert '"communicates_to": [' in value
+    assert '"dialog_confirm_exit"' in value
+    assert '"depends_on": [' in value
+    assert '"profile_state"' in value
 
 
 def tool_sections_start_closed():
@@ -148,13 +190,11 @@ def tool_sections_open_in_click_order():
 
     window.section_toggle_buttons["Geometry"].click()
     window.section_toggle_buttons["Components"].click()
-    window.section_toggle_buttons["Inspector"].click()
     window.section_toggle_buttons["Project"].click()
 
-    assert window.active_tool_sections == ["Geometry", "Components", "Inspector", "Project"]
+    assert window.active_tool_sections == ["Geometry", "Components", "Project"]
     assert window.section_cards["Geometry"].parent() is not None
     assert window.section_cards["Components"].parent() is not None
-    assert window.section_cards["Inspector"].parent() is not None
     assert window.section_cards["Project"].parent() is not None
     assert window.tool_workspace_window.isVisible()
 

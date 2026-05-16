@@ -62,6 +62,15 @@ class RecordingCanvas(CanvasWidget):
     def _draw_panel(self, node, screen_rect, profile, painter):
         self._record("panel", node, screen_rect, profile, painter)
 
+    def _draw_container(self, node, screen_rect, profile, painter):
+        self._record("container", node, screen_rect, profile, painter)
+
+    def _draw_tool_window(self, node, screen_rect, profile, painter):
+        self._record("tool_window", node, screen_rect, profile, painter)
+
+    def _draw_dialog(self, node, screen_rect, profile, painter):
+        self._record("dialog", node, screen_rect, profile, painter)
+
     def _draw_generic_fallback(self, node, screen_rect, profile, painter):
         self._record("generic_fallback", node, screen_rect, profile, painter)
 
@@ -387,6 +396,42 @@ def panel_resolves_to_panel_draw_path():
     assert canvas.render_profiles[panel.id]["render_kind"] == "panel"
 
 
+def container_resolves_to_container_draw_path():
+    canvas, model, _selection = make_recording_canvas()
+    container = model.create_node("container", {"layout_mode": "free", "x": 20, "y": 20, "width": 260, "height": 180})
+    model.add_node(model.root_id, container)
+
+    _paint(canvas)
+
+    assert ("container", container.id) in canvas.draw_calls
+    assert ("generic_fallback", container.id) not in canvas.draw_calls
+    assert canvas.render_profiles[container.id]["render_kind"] == "container"
+
+
+def tool_window_role_resolves_to_tool_window_draw_path():
+    canvas, model, _selection = make_recording_canvas()
+    window = model.create_node("panel", {"ui_role": "tool_window", "layout_mode": "free", "x": 20, "y": 20, "width": 260, "height": 180})
+    model.add_node(model.root_id, window)
+
+    _paint(canvas)
+
+    assert ("tool_window", window.id) in canvas.draw_calls
+    assert ("generic_fallback", window.id) not in canvas.draw_calls
+    assert canvas.render_profiles[window.id]["render_kind"] == "tool_window"
+
+
+def dialog_role_resolves_to_dialog_draw_path():
+    canvas, model, _selection = make_recording_canvas()
+    dialog = model.create_node("panel", {"ui_role": "dialog", "layout_mode": "free", "x": 20, "y": 20, "width": 260, "height": 180})
+    model.add_node(model.root_id, dialog)
+
+    _paint(canvas)
+
+    assert ("dialog", dialog.id) in canvas.draw_calls
+    assert ("generic_fallback", dialog.id) not in canvas.draw_calls
+    assert canvas.render_profiles[dialog.id]["render_kind"] == "dialog"
+
+
 def unsupported_role_type_uses_generic_fallback_draw_path():
     canvas, model, _selection = make_recording_canvas()
     unknown = Node(
@@ -456,7 +501,7 @@ def forked_node_resolves_fork_badge():
     }
     badge = canvas._resolve_node_badge(button)
     assert badge is not None
-    assert badge["text"] == "FORK"
+    assert badge["text"] == "FORKED"
 
 
 def bench_node_resolves_bench_badge():
@@ -557,6 +602,49 @@ def protected_selection_sets_status_guidance():
 
     selection.set_selection(button.id)
     assert "Inspect only: use Fork Here or Open In Bench to make an editable copy" in canvas.get_status_text()
+    assert "WORKING: source truth" in canvas.get_status_text()
+
+
+def forked_selection_sets_working_copy_guidance():
+    canvas, model, selection = make_canvas()
+    document = model.create_node("document", {"layout_mode": "auto"})
+    button = model.create_node(
+        "button",
+        {"layout_mode": "free", "x": 120, "y": 120, "width": 200, "height": 96, "text": "Save"},
+    )
+    button.metadata = {
+        "origin_node_id": "source_button",
+        "trust": {"trust_level": "partial", "representation_origin": "manual", "warnings": []},
+        "provenance": {"representation_origin": "manual"},
+    }
+    model.add_node(model.root_id, document)
+    model.add_node(document.id, button)
+
+    selection.set_selection(button.id)
+    status = canvas.get_status_text()
+    assert "WORKING: forked copy" in status
+    assert "Forked working copy: edits apply to the copy, not source truth" in status
+
+
+def bench_selection_sets_working_copy_guidance():
+    canvas, model, selection = make_canvas()
+    document = model.create_node("document", {"layout_mode": "auto"})
+    panel = model.create_node(
+        "panel",
+        {"layout_mode": "free", "x": 120, "y": 120, "width": 200, "height": 96, "title": "Bench"},
+    )
+    panel.metadata = {
+        "bench_session_id": "bench_1",
+        "trust": {"trust_level": "partial", "representation_origin": "adapter", "warnings": []},
+        "provenance": {"representation_origin": "adapter", "fork_destination": "bench"},
+    }
+    model.add_node(model.root_id, document)
+    model.add_node(document.id, panel)
+
+    selection.set_selection(panel.id)
+    status = canvas.get_status_text()
+    assert "WORKING: bench copy" in status
+    assert "Bench copy: edits are isolated to the active bench session" in status
 
 
 def run_all_tests():
@@ -576,6 +664,9 @@ def run_all_tests():
         toolbar_resolves_to_toolbar_draw_path,
         sidebar_resolves_to_sidebar_draw_path,
         panel_resolves_to_panel_draw_path,
+        container_resolves_to_container_draw_path,
+        tool_window_role_resolves_to_tool_window_draw_path,
+        dialog_role_resolves_to_dialog_draw_path,
         unsupported_role_type_uses_generic_fallback_draw_path,
         unsupported_ui_role_falls_back_to_supported_node_type_draw_path,
         selection_does_not_change_render_dispatch,
@@ -586,6 +677,8 @@ def run_all_tests():
         protected_source_click_sets_status_reason,
         protected_geometry_overlay_sets_status_reason,
         protected_selection_sets_status_guidance,
+        forked_selection_sets_working_copy_guidance,
+        bench_selection_sets_working_copy_guidance,
     ]
 
     passed = 0

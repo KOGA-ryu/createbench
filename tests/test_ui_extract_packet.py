@@ -235,6 +235,8 @@ def import_preserves_metadata():
     window = state.layout_model.get_node("window_1")
     assert window is not None
     assert window.metadata["source"]["file"] == "ui/main_window.py"
+    assert window.metadata["layout_hints"]["width"] == 320
+    assert window.metadata["render_hints"]["title"] == "Main Window"
     assert window.metadata["raw"]["unresolved_fields"] == ["ui_role"]
     assert window.metadata["provenance"]["source_provider"] == "manual_adapter"
     assert state.layout_model.scene_metadata["source_provider"] == "manual_adapter"

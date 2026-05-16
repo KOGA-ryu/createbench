@@ -499,6 +499,50 @@ def load_project_in_bench_creates_bench_projection():
         assert bench_root.parent_id == workspace.id
 
 
+def load_saved_root_payload_skips_synthetic_root():
+    state = make_state()
+    document, _container, _button = build_sample_layout(state)
+    with tempfile.TemporaryDirectory() as tmp:
+        filepath = Path(tmp) / "project.json"
+        save_project(state.layout_model, filepath)
+
+        loaded_state = make_state()
+        load_project(
+            loaded_state.layout_model,
+            loaded_state.property_registry,
+            filepath,
+        )
+
+        root = loaded_state.layout_model.get_node(loaded_state.layout_model.root_id)
+        assert root is not None
+        assert root.type == "root"
+        root_children = loaded_state.layout_model.get_children(loaded_state.layout_model.root_id)
+        assert [child.id for child in root_children] == [document.id]
+        assert loaded_state.layout_model.get_node("root") is root
+
+
+def load_saved_root_payload_in_bench_skips_synthetic_root():
+    state = make_state()
+    document, _container, _button = build_sample_layout(state)
+    with tempfile.TemporaryDirectory() as tmp:
+        filepath = Path(tmp) / "project.json"
+        save_project(state.layout_model, filepath)
+
+        loaded_state = make_state()
+        created_root_ids = load_project_in_bench(
+            loaded_state.layout_model,
+            loaded_state.property_registry,
+            filepath,
+        )
+
+        assert created_root_ids
+        assert created_root_ids[0] != loaded_state.layout_model.root_id
+        bench_root = loaded_state.layout_model.get_node(created_root_ids[0])
+        assert bench_root is not None
+        assert bench_root.type == "document"
+        assert bench_root.metadata["provenance"]["project_node_id"] == document.id
+
+
 def run_all_tests():
     tests = [
         save_creates_file,
@@ -517,6 +561,8 @@ def run_all_tests():
         load_clears_stale_active_bench_session,
         load_project_alongside_preserves_existing_scene,
         load_project_in_bench_creates_bench_projection,
+        load_saved_root_payload_skips_synthetic_root,
+        load_saved_root_payload_in_bench_skips_synthetic_root,
     ]
 
     passed = 0

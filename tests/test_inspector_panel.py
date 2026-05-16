@@ -139,6 +139,29 @@ def unknown_properties_section():
     assert "Unknown Properties" in labels
 
 
+def unknown_property_remove_is_disabled_when_not_editable():
+    panel, model, selection, _registry = make_panel()
+    document = model.create_node("document", {})
+    button = model.create_node("button", {"custom_flag": True})
+    button.metadata = {
+        "trust": {
+            "trust_level": "partial",
+            "representation_origin": "adapter",
+            "warnings": [],
+        },
+        "provenance": {
+            "representation_origin": "adapter",
+        },
+    }
+    model.add_node(model.root_id, document)
+    model.add_node(document.id, button)
+
+    selection.set_selection(button.id)
+    remove_button = panel.findChild(QPushButton, "unknown_remove_custom_flag")
+    assert remove_button is not None
+    assert not remove_button.isEnabled()
+
+
 def reset_to_default():
     panel, model, selection, _registry = make_panel()
     document = model.create_node("document", {})
@@ -164,6 +187,31 @@ def missing_schema_fallback():
     assert "No schema found" in labels
     editor = panel.findChild(QLineEdit, "field_editor_foo")
     assert editor is not None
+
+
+def missing_schema_shows_editability_reason_and_disables_editor():
+    panel, model, selection, _registry = make_panel()
+    document = model.create_node("document", {})
+    model.add_node(model.root_id, document)
+    custom = Node(id="custom_1", type="custom", properties={"foo": "bar"}, parent_id=document.id)
+    custom.metadata = {
+        "trust": {
+            "trust_level": "partial",
+            "representation_origin": "adapter",
+            "warnings": [],
+        },
+        "provenance": {
+            "representation_origin": "adapter",
+        },
+    }
+    model.add_node(document.id, custom)
+
+    selection.set_selection(custom.id)
+    labels = [label.text() for label in panel.findChildren(QLabel)]
+    assert "Editing disabled: Source-backed or adapter-backed node requires fork/bench before editing" in labels
+    editor = panel.findChild(QLineEdit, "field_editor_foo")
+    assert editor is not None
+    assert not editor.isEnabled()
 
 
 def inspector_displays_trust_fields():
@@ -225,6 +273,11 @@ def inspector_displays_trust_fields():
     assert "source.file: ui/main_window.py" in labels
     assert "source.symbol: save_button" in labels
     assert "line_range: 42" in labels
+    assert "Snapshot" in labels
+    assert "snapshot.root_type: button" in labels
+    assert "snapshot.child_count: 0" in labels
+    assert "snapshot.node_count: 1" in labels
+    assert "snapshot.children: -" in labels
     assert "Relationships" in labels
     assert "communicates_to: dialog_1" in labels
     assert "updated_by: state_1" in labels
@@ -239,6 +292,25 @@ def inspector_displays_trust_fields():
     assert "scene_source_provider: bluebench" in labels
     assert "scene_source_framework: pyside6" in labels
     assert "scene_packet_trust_level: partial" in labels
+
+
+def inspector_snapshot_uses_serialize_subtree_contract():
+    panel, model, selection, _registry = make_panel()
+    document = model.create_node("document", {})
+    panel_node = model.create_node("panel", {"title": "Settings"})
+    first = model.create_node("button", {"text": "Save"})
+    second = model.create_node("text", {"text": "Status"})
+    model.add_node(model.root_id, document)
+    model.add_node(document.id, panel_node)
+    model.add_node(panel_node.id, first)
+    model.add_node(panel_node.id, second)
+
+    selection.set_selection(panel_node.id)
+    labels = [label.text() for label in panel.findChildren(QLabel)]
+    assert "snapshot.root_type: panel" in labels
+    assert "snapshot.child_count: 2" in labels
+    assert "snapshot.node_count: 3" in labels
+    assert "snapshot.children: button, text" in labels
 
 
 def packet_protected_geometry_fields_are_disabled():
@@ -615,6 +687,52 @@ def inspector_refreshes_from_model_notification():
     assert "source.file: ui/main_window.py" in labels
 
 
+def source_scene_shows_scene_level_fork_actions():
+    panel, model, selection, _registry = make_panel()
+    model.scene_metadata = {
+        "representation_origin": "adapter",
+        "source_provider": "scanner_qt_runtime_probe",
+        "packet_trust_level": "partial",
+    }
+    document = model.create_node("document", {"layout_mode": "free", "x": 10, "y": 10, "width": 200, "height": 120})
+    document.metadata = {
+        "trust": {"trust_level": "partial", "representation_origin": "adapter", "warnings": []},
+        "provenance": {"representation_origin": "adapter"},
+    }
+    model.add_node(model.root_id, document)
+
+    selection.set_selection(document.id)
+    buttons = {button.objectName(): button for button in panel.findChildren(QPushButton)}
+    assert "scene_truth_fork_scene_here" in buttons
+    assert "scene_truth_open_scene_in_bench" in buttons
+
+
+def scene_level_bench_action_selects_bench_clone():
+    panel, model, selection, _registry = make_panel()
+    model.scene_metadata = {
+        "representation_origin": "adapter",
+        "source_provider": "scanner_qt_runtime_probe",
+        "packet_trust_level": "partial",
+    }
+    document = model.create_node("document", {"layout_mode": "free", "x": 10, "y": 10, "width": 200, "height": 120})
+    document.metadata = {
+        "trust": {"trust_level": "partial", "representation_origin": "adapter", "warnings": []},
+        "provenance": {"representation_origin": "adapter"},
+    }
+    model.add_node(model.root_id, document)
+
+    selection.set_selection(document.id)
+    bench_button = panel.findChild(QPushButton, "scene_truth_open_scene_in_bench")
+    assert bench_button is not None
+    bench_button.clicked.emit()
+
+    selected_id = selection.get_selection()
+    selected = model.get_node(selected_id)
+    assert selected is not None
+    assert selected.parent_id == model.ensure_bench_workspace().id
+    assert selected.metadata["bench_session_id"] == model.get_active_bench_session_id()
+
+
 def run_all_tests():
     tests = [
         no_selection_shows_placeholder,
@@ -625,9 +743,12 @@ def run_all_tests():
         property_commit_updates_node,
         invalid_number_does_not_commit,
         unknown_properties_section,
+        unknown_property_remove_is_disabled_when_not_editable,
         reset_to_default,
         missing_schema_fallback,
+        missing_schema_shows_editability_reason_and_disables_editor,
         inspector_displays_trust_fields,
+        inspector_snapshot_uses_serialize_subtree_contract,
         packet_protected_geometry_fields_are_disabled,
         packet_protected_content_fields_are_disabled,
         forkable_node_can_fork_to_design,
@@ -637,6 +758,8 @@ def run_all_tests():
         scene_truth_can_close_bench_session,
         recently_closed_bench_session_can_reopen,
         inspector_refreshes_from_model_notification,
+        source_scene_shows_scene_level_fork_actions,
+        scene_level_bench_action_selects_bench_clone,
     ]
 
     passed = 0

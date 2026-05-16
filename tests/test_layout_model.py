@@ -394,6 +394,103 @@ def batch_updates_coalesce_notifications():
     assert notifications == ["changed"]
 
 
+def fork_scene_to_design_clones_root_children():
+    model = make_model()
+    document = model.create_node("document", {"layout_mode": "free", "x": 40, "y": 40, "width": 300, "height": 200})
+    document.metadata = {
+        "trust": {"trust_level": "partial", "representation_origin": "adapter", "warnings": []},
+        "provenance": {"representation_origin": "adapter"},
+    }
+    model.add_node(model.root_id, document)
+
+    created_root_ids = model.fork_scene_to_design()
+
+    assert len(created_root_ids) == 1
+    forked = model.get_node(created_root_ids[0])
+    assert forked is not None
+    assert forked.id != document.id
+    assert forked.parent_id == model.root_id
+    assert forked.metadata["origin_node_id"] == document.id
+    assert forked.metadata["provenance"]["fork_destination"] == "here"
+    assert forked.properties["x"] == document.properties["x"] + model.FORK_OFFSET
+    assert forked.properties["y"] == document.properties["y"] + model.FORK_OFFSET
+
+
+def open_scene_in_bench_clones_root_children_into_one_session():
+    model = make_model()
+    first = model.create_node("document", {"layout_mode": "free", "x": 40, "y": 40, "width": 300, "height": 200})
+    second = model.create_node("panel", {"layout_mode": "free", "x": 400, "y": 60, "width": 180, "height": 140})
+    for node in (first, second):
+        node.metadata = {
+            "trust": {"trust_level": "partial", "representation_origin": "adapter", "warnings": []},
+            "provenance": {"representation_origin": "adapter"},
+        }
+        model.add_node(model.root_id, node)
+
+    created_root_ids = model.open_scene_in_bench()
+
+    assert len(created_root_ids) == 2
+    workspace = model.ensure_bench_workspace()
+    cloned = [model.get_node(node_id) for node_id in created_root_ids]
+    assert all(node is not None for node in cloned)
+    assert all(node.parent_id == workspace.id for node in cloned if node is not None)
+    session_ids = {node.metadata["bench_session_id"] for node in cloned if node is not None}
+    assert len(session_ids) == 1
+    assert model.get_active_bench_session_id() in session_ids
+    assert workspace.properties["x"] == model.BENCH_WORKSPACE_X
+    assert workspace.properties["width"] == model.BENCH_WORKSPACE_WIDTH
+    assert workspace.properties["height"] == model.BENCH_WORKSPACE_HEIGHT
+
+
+def serialize_subtree_includes_expected_fields():
+    model = make_model()
+    document = model.create_node("document", {"layout_mode": "free", "x": 10, "y": 20, "width": 100, "height": 80})
+    document.metadata = {
+        "source": {"file": "ui/main_window.py", "symbol": "Document", "line_start": 1, "line_end": 10, "source_id": "doc_1"},
+        "trust": {"trust_level": "partial", "representation_origin": "adapter", "warnings": []},
+    }
+    model.add_node(model.root_id, document)
+
+    snapshot = model.serialize_subtree(document.id)
+
+    assert snapshot["type"] == "document"
+    assert snapshot["name"] == document.name
+    assert snapshot["properties"] == document.properties
+    assert snapshot["metadata"] == document.metadata
+    assert snapshot["children"] == []
+
+
+def serialize_subtree_preserves_child_order():
+    model = make_model()
+    document = model.create_node("document", {})
+    first = model.create_node("button", {"text": "First"})
+    second = model.create_node("button", {"text": "Second"})
+    model.add_node(model.root_id, document)
+    model.add_node(document.id, first)
+    model.add_node(document.id, second)
+
+    snapshot = model.serialize_subtree(document.id)
+
+    assert [child["properties"]["text"] for child in snapshot["children"]] == ["First", "Second"]
+
+
+def serialize_subtree_preserves_nested_metadata():
+    model = make_model()
+    document = model.create_node("document", {})
+    button = model.create_node("button", {"text": "Save"})
+    button.metadata = {
+        "source": {"file": "ui/main_window.py", "symbol": "save_button", "line_start": 12, "line_end": 12, "source_id": "save_1"},
+        "trust": {"trust_level": "source", "representation_origin": "source", "warnings": ["exact"]},
+        "raw": {"provider_type": "button", "provider_data": {"kind": "primary"}, "unresolved_fields": []},
+    }
+    model.add_node(model.root_id, document)
+    model.add_node(document.id, button)
+
+    snapshot = model.serialize_subtree(document.id)
+
+    assert snapshot["children"][0]["metadata"] == button.metadata
+
+
 def run_all_tests():
     tests = [
         create_node_applies_defaults,
@@ -415,6 +512,11 @@ def run_all_tests():
         closed_bench_session_can_reopen,
         model_notifies_subscribers_on_mutation,
         batch_updates_coalesce_notifications,
+        fork_scene_to_design_clones_root_children,
+        open_scene_in_bench_clones_root_children_into_one_session,
+        serialize_subtree_includes_expected_fields,
+        serialize_subtree_preserves_child_order,
+        serialize_subtree_preserves_nested_metadata,
     ]
 
     passed = 0

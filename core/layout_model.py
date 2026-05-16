@@ -7,6 +7,8 @@ from typing import Callable
 from typing import Optional
 
 from config import DEBUG
+from core import bench_sessions, bench_workspace
+from core.layout_model_api import LayoutModelAPI
 from core.node import Node
 
 
@@ -14,11 +16,11 @@ class LayoutModel:
     RESTORED_ID_RE = re.compile(r"^(?P<type>[a-z0-9_]+)_(?P<index>\d+)$")
     FORK_OFFSET = 24
     BENCH_SESSION_PREFIX = "bench_"
-    BENCH_WORKSPACE_TITLE = "Bench Workspace"
-    BENCH_WORKSPACE_X = 920
-    BENCH_WORKSPACE_Y = 72
-    BENCH_WORKSPACE_WIDTH = 420
-    BENCH_WORKSPACE_HEIGHT = 680
+    BENCH_WORKSPACE_TITLE = bench_workspace.BENCH_WORKSPACE_TITLE
+    BENCH_WORKSPACE_X = bench_workspace.BENCH_WORKSPACE_X
+    BENCH_WORKSPACE_Y = bench_workspace.BENCH_WORKSPACE_Y
+    BENCH_WORKSPACE_WIDTH = bench_workspace.BENCH_WORKSPACE_WIDTH
+    BENCH_WORKSPACE_HEIGHT = bench_workspace.BENCH_WORKSPACE_HEIGHT
 
     def __init__(self, property_registry):
         self.registry = property_registry
@@ -54,126 +56,48 @@ class LayoutModel:
         self.scene_metadata = dict(metadata or {})
         self.notify_subscribers()
 
-    def get_active_bench_session_id(self) -> str | None:
-        active = self.scene_metadata.get("active_bench_session_id")
-        return None if active is None else str(active)
+    def get_root_id(self) -> str:
+        return self.root_id
 
-    def set_active_bench_session(self, bench_session_id: str | None) -> None:
-        metadata = dict(self.scene_metadata)
-        if bench_session_id is None:
-            metadata.pop("active_bench_session_id", None)
-        else:
-            metadata["active_bench_session_id"] = str(bench_session_id)
-        self.set_scene_metadata(metadata)
+    def get_scene_metadata(self) -> dict[str, object]:
+        return self.scene_metadata
 
-    def clear_active_bench_session(self) -> None:
-        self.set_active_bench_session(None)
-
-    def sync_active_bench_session(self) -> None:
-        active_bench_session_id = self.get_active_bench_session_id()
-        if active_bench_session_id is None:
-            return
-        if active_bench_session_id in self.get_bench_session_ids():
-            return
-        metadata = dict(self.scene_metadata)
-        if "active_bench_session_id" not in metadata:
-            return
-        metadata.pop("active_bench_session_id", None)
+    def replace_scene_metadata_and_notify(self, metadata: dict[str, object]) -> None:
         self.scene_metadata = metadata
         self.notify_subscribers()
 
+    def get_closed_bench_sessions(self) -> list[dict[str, object]]:
+        return self.closed_bench_sessions
+
+    def set_closed_bench_sessions(self, entries: list[dict[str, object]]) -> None:
+        self.closed_bench_sessions = entries
+
+    def iter_nodes(self) -> list[Node]:
+        return list(self.nodes.values())
+
+    def get_active_bench_session_id(self) -> str | None:
+        return bench_sessions.get_active_bench_session_id(LayoutModelAPI(self))
+
+    def set_active_bench_session(self, bench_session_id: str | None) -> None:
+        bench_sessions.set_active_bench_session(LayoutModelAPI(self), bench_session_id)
+
+    def clear_active_bench_session(self) -> None:
+        bench_sessions.clear_active_bench_session(LayoutModelAPI(self))
+
+    def sync_active_bench_session(self) -> None:
+        bench_sessions.sync_active_bench_session(LayoutModelAPI(self))
+
     def get_bench_session_ids(self) -> list[str]:
-        session_ids: set[str] = set()
-        for node in self.nodes.values():
-            metadata = getattr(node, "metadata", {}) or {}
-            bench_session_id = metadata.get("bench_session_id")
-            if bench_session_id:
-                session_ids.add(str(bench_session_id))
-        return sorted(session_ids)
+        return bench_sessions.get_bench_session_ids(LayoutModelAPI(self))
 
     def get_recently_closed_bench_session_ids(self) -> list[str]:
-        return [str(entry["bench_session_id"]) for entry in self.closed_bench_sessions]
+        return bench_sessions.get_recently_closed_bench_session_ids(LayoutModelAPI(self))
 
     def close_bench_session(self, bench_session_id: str) -> list[str]:
-        deleted: list[str] = []
-        with self.batch_updates():
-            roots_to_capture: list[str] = []
-            for node in list(self.nodes.values()):
-                if node.id == self.root_id:
-                    continue
-                metadata = getattr(node, "metadata", {}) or {}
-                if str(metadata.get("bench_session_id") or "") != str(bench_session_id):
-                    continue
-                parent = self.get_parent(node.id)
-                parent_session_id = None if parent is None else ((getattr(parent, "metadata", {}) or {}).get("bench_session_id"))
-                if str(parent_session_id or "") != str(bench_session_id):
-                    roots_to_capture.append(node.id)
-            if roots_to_capture:
-                self.closed_bench_sessions = [
-                    entry for entry in self.closed_bench_sessions
-                    if str(entry["bench_session_id"]) != str(bench_session_id)
-                ]
-                self.closed_bench_sessions.insert(
-                    0,
-                    {
-                        "bench_session_id": str(bench_session_id),
-                        "roots": [self._serialize_subtree(node_id) for node_id in roots_to_capture if self.get_node(node_id) is not None],
-                    },
-                )
-            for node in list(self.nodes.values()):
-                if node.id == self.root_id:
-                    continue
-                metadata = getattr(node, "metadata", {}) or {}
-                if str(metadata.get("bench_session_id") or "") != str(bench_session_id):
-                    continue
-                if node.parent_id is None:
-                    continue
-                if self.get_node(node.id) is None:
-                    continue
-                deleted.extend(self.remove_node(node.id))
-
-            if self.get_active_bench_session_id() == str(bench_session_id):
-                self.clear_active_bench_session()
-
-            workspace = self._find_bench_workspace()
-            if workspace is not None and not workspace.children:
-                deleted.extend(self.remove_node(workspace.id))
-
-        return deleted
+        return bench_sessions.close_bench_session(LayoutModelAPI(self), bench_session_id)
 
     def reopen_closed_bench_session(self, bench_session_id: str) -> list[str]:
-        restored_roots: list[str] = []
-        entry = next(
-            (entry for entry in self.closed_bench_sessions if str(entry["bench_session_id"]) == str(bench_session_id)),
-            None,
-        )
-        if entry is None:
-            return restored_roots
-
-        workspace = self._ensure_bench_workspace()
-
-        def build(snapshot: dict[str, object], parent_id: str) -> str:
-            node = self.create_node(
-                str(snapshot["type"]),
-                deepcopy(snapshot.get("properties", {})),
-                name=snapshot.get("name"),
-                metadata=deepcopy(snapshot.get("metadata", {})),
-            )
-            self.add_node(parent_id, node)
-            for child_snapshot in snapshot.get("children", []):
-                build(child_snapshot, node.id)
-            return node.id
-
-        with self.batch_updates():
-            for root_snapshot in entry.get("roots", []):
-                restored_roots.append(build(root_snapshot, workspace.id))
-            self.set_active_bench_session(str(bench_session_id))
-            self.closed_bench_sessions = [
-                existing for existing in self.closed_bench_sessions
-                if str(existing["bench_session_id"]) != str(bench_session_id)
-            ]
-
-        return restored_roots
+        return bench_sessions.reopen_closed_bench_session(LayoutModelAPI(self), bench_session_id)
 
     @contextmanager
     def batch_updates(self):
@@ -327,53 +251,14 @@ class LayoutModel:
             target_parent = self._ensure_bench_workspace()
             insert_index = None
 
-        def clone_subtree(source_node_id: str, target_parent_id: str, index: int | None = None) -> str:
-            source = self.get_node(source_node_id)
-            assert source is not None
-            metadata = deepcopy(getattr(source, "metadata", {}) or {})
-            metadata["origin_node_id"] = source.id
-            if bench_session_id is not None:
-                metadata["bench_session_id"] = bench_session_id
-            else:
-                metadata.pop("bench_session_id", None)
-
-            trust = dict(metadata.get("trust", {}) or {})
-            original_origin = (
-                metadata.get("provenance", {}).get("representation_origin")
-                or trust.get("representation_origin")
-                or "unknown"
-            )
-            if original_origin in {"source", "adapter"}:
-                trust["trust_level"] = "partial"
-            else:
-                trust["trust_level"] = trust.get("trust_level") or "mock"
-            trust["representation_origin"] = "manual" if destination == "here" else "adapter"
-            metadata["trust"] = trust
-
-            provenance = dict(metadata.get("provenance", {}) or {})
-            provenance["representation_origin"] = "manual" if destination == "here" else "adapter"
-            provenance["forked_from_origin"] = source.id
-            provenance["fork_destination"] = destination
-            metadata["provenance"] = provenance
-
-            cloned = self.create_node(
-                source.type,
-                deepcopy(source.properties),
-                name=source.name,
-                metadata=metadata,
-            )
-            if cloned.properties.get("layout_mode") == "free":
-                if "x" in cloned.properties and cloned.properties["x"] is not None:
-                    cloned.properties["x"] = int(cloned.properties["x"]) + self.FORK_OFFSET
-                if "y" in cloned.properties and cloned.properties["y"] is not None:
-                    cloned.properties["y"] = int(cloned.properties["y"]) + self.FORK_OFFSET
-            self.add_node(target_parent_id, cloned, index=index)
-            for child_id in source.children:
-                clone_subtree(child_id, cloned.id)
-            return cloned.id
-
         with self.batch_updates():
-            forked_id = clone_subtree(node_id, target_parent.id, insert_index)
+            forked_id = self._clone_subtree(
+                node_id,
+                target_parent.id,
+                destination=destination,
+                bench_session_id=bench_session_id,
+                index=insert_index,
+            )
             self._debug_validate()
         return forked_id
 
@@ -389,6 +274,116 @@ class LayoutModel:
                 self.set_active_bench_session(bench_session_id)
         return bench_id
 
+    def fork_scene_to_design(self) -> list[str]:
+        created_root_ids: list[str] = []
+        root_children = [
+            child for child in self.get_children(self.root_id)
+            if child.id != self.root_id and self._find_bench_workspace() is not child
+        ]
+        with self.batch_updates():
+            for child in root_children:
+                created_root_ids.append(
+                    self._clone_subtree(
+                        child.id,
+                        self.root_id,
+                        destination="here",
+                        bench_session_id=None,
+                        index=None,
+                    )
+                )
+        return created_root_ids
+
+    def open_scene_in_bench(self) -> list[str]:
+        created_root_ids: list[str] = []
+        root_children = [
+            child for child in self.get_children(self.root_id)
+            if child.id != self.root_id and self._find_bench_workspace() is not child
+        ]
+        if not root_children:
+            return created_root_ids
+        bench_session_id = f"{self.BENCH_SESSION_PREFIX}scene"
+        existing = set(self.get_bench_session_ids()) | set(
+            self.get_recently_closed_bench_session_ids()
+        )
+        if bench_session_id in existing:
+            index = 2
+            while f"{self.BENCH_SESSION_PREFIX}scene_{index}" in existing:
+                index += 1
+            bench_session_id = f"{self.BENCH_SESSION_PREFIX}scene_{index}"
+        workspace = self._ensure_bench_workspace()
+        with self.batch_updates():
+            for child in root_children:
+                created_root_ids.append(
+                    self._clone_subtree(
+                        child.id,
+                        workspace.id,
+                        destination="bench",
+                        bench_session_id=bench_session_id,
+                        index=None,
+                    )
+                )
+            self.set_active_bench_session(bench_session_id)
+        return created_root_ids
+
+    def _clone_subtree(
+        self,
+        source_node_id: str,
+        target_parent_id: str,
+        *,
+        destination: str,
+        bench_session_id: str | None,
+        index: int | None = None,
+    ) -> str:
+        source = self.get_node(source_node_id)
+        assert source is not None
+        metadata = deepcopy(getattr(source, "metadata", {}) or {})
+        metadata["origin_node_id"] = source.id
+        if bench_session_id is not None:
+            metadata["bench_session_id"] = bench_session_id
+        else:
+            metadata.pop("bench_session_id", None)
+
+        trust = dict(metadata.get("trust", {}) or {})
+        original_origin = (
+            metadata.get("provenance", {}).get("representation_origin")
+            or trust.get("representation_origin")
+            or "unknown"
+        )
+        if original_origin in {"source", "adapter"}:
+            trust["trust_level"] = "partial"
+        else:
+            trust["trust_level"] = trust.get("trust_level") or "mock"
+        trust["representation_origin"] = "manual" if destination == "here" else "adapter"
+        metadata["trust"] = trust
+
+        provenance = dict(metadata.get("provenance", {}) or {})
+        provenance["representation_origin"] = "manual" if destination == "here" else "adapter"
+        provenance["forked_from_origin"] = source.id
+        provenance["fork_destination"] = destination
+        metadata["provenance"] = provenance
+
+        cloned = self.create_node(
+            source.type,
+            deepcopy(source.properties),
+            name=source.name,
+            metadata=metadata,
+        )
+        if cloned.properties.get("layout_mode") == "free":
+            if "x" in cloned.properties and cloned.properties["x"] is not None:
+                cloned.properties["x"] = int(cloned.properties["x"]) + self.FORK_OFFSET
+            if "y" in cloned.properties and cloned.properties["y"] is not None:
+                cloned.properties["y"] = int(cloned.properties["y"]) + self.FORK_OFFSET
+        self.add_node(target_parent_id, cloned, index=index)
+        for child_id in source.children:
+            self._clone_subtree(
+                child_id,
+                cloned.id,
+                destination=destination,
+                bench_session_id=bench_session_id,
+                index=None,
+            )
+        return cloned.id
+
     def get_children(self, node_id: str) -> list[Node]:
         node = self.get_node(node_id)
         if node is None:
@@ -396,49 +391,15 @@ class LayoutModel:
         return [self.nodes[child_id] for child_id in node.children if child_id in self.nodes]
 
     def _ensure_bench_workspace(self) -> Node:
-        existing = self._find_bench_workspace()
-        if existing is not None:
-            return existing
-
-        workspace = self.create_node(
-            "panel",
-            {
-                "title": self.BENCH_WORKSPACE_TITLE,
-                "layout_mode": "free",
-                "x": self.BENCH_WORKSPACE_X,
-                "y": self.BENCH_WORKSPACE_Y,
-                "width": self.BENCH_WORKSPACE_WIDTH,
-                "height": self.BENCH_WORKSPACE_HEIGHT,
-            },
-            metadata={
-                "trust": {
-                    "trust_level": "mock",
-                    "representation_origin": "manual",
-                    "warnings": [],
-                },
-                "provenance": {
-                    "representation_origin": "manual",
-                    "internal_role": "bench_workspace",
-                },
-            },
-        )
-        self.add_node(self.root_id, workspace)
-        return workspace
+        return bench_workspace.ensure_bench_workspace(LayoutModelAPI(self))
 
     def ensure_bench_workspace(self) -> Node:
-        return self._ensure_bench_workspace()
+        return bench_workspace.ensure_bench_workspace(LayoutModelAPI(self))
 
     def _find_bench_workspace(self) -> Node | None:
-        for child in self.get_children(self.root_id):
-            if (
-                child.type == "panel"
-                and child.properties.get("title") == self.BENCH_WORKSPACE_TITLE
-                and child.properties.get("layout_mode") == "free"
-            ):
-                return child
-        return None
+        return bench_workspace.find_bench_workspace(LayoutModelAPI(self))
 
-    def _serialize_subtree(self, node_id: str) -> dict[str, object]:
+    def serialize_subtree(self, node_id: str) -> dict[str, object]:
         node = self.get_node(node_id)
         assert node is not None
         return {
@@ -446,7 +407,7 @@ class LayoutModel:
             "name": node.name,
             "properties": deepcopy(node.properties),
             "metadata": deepcopy(getattr(node, "metadata", {}) or {}),
-            "children": [self._serialize_subtree(child_id) for child_id in node.children if self.get_node(child_id) is not None],
+            "children": [self.serialize_subtree(child_id) for child_id in node.children if self.get_node(child_id) is not None],
         }
 
     def get_parent(self, node_id: str) -> Optional[Node]:

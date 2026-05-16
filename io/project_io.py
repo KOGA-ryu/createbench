@@ -49,6 +49,15 @@ def _load_project_payload(layout_model, payload: dict, destination: str) -> list
     data = payload["data"]
     created_root_ids: list[str] = []
 
+    def iter_import_roots(node_data):
+        if not isinstance(node_data, dict):
+            raise ValueError("Project payload data must be an object")
+        if node_data.get("type") == "root":
+            return list(node_data.get("children", []))
+        if "type" in node_data:
+            return [node_data]
+        return list(node_data.get("children", []))
+
     def build(node_dict, parent_id, *, restore_ids: bool, bench_session_id: str | None = None):
         node = layout_model.create_node(
             node_dict["type"],
@@ -84,41 +93,29 @@ def _load_project_payload(layout_model, payload: dict, destination: str) -> list
             for child in list(layout_model.get_children(layout_model.root_id)):
                 layout_model.remove_node(child.id)
             layout_model.type_counters = {}
-            if "type" in data:
-                created_root_ids.append(build(data, layout_model.root_id, restore_ids=True))
-            else:
-                for child in data.get("children", []):
-                    created_root_ids.append(build(child, layout_model.root_id, restore_ids=True))
+            for child in iter_import_roots(data):
+                created_root_ids.append(build(child, layout_model.root_id, restore_ids=True))
             layout_model.sync_active_bench_session()
         elif destination == "alongside":
-            if "type" in data:
-                created_root_ids.append(build(data, layout_model.root_id, restore_ids=False))
-            else:
-                for child in data.get("children", []):
-                    created_root_ids.append(build(child, layout_model.root_id, restore_ids=False))
+            for child in iter_import_roots(data):
+                created_root_ids.append(build(child, layout_model.root_id, restore_ids=False))
         elif destination == "bench":
             workspace = layout_model.ensure_bench_workspace()
-            seed = data.get("id") if isinstance(data, dict) and data.get("id") else "project"
+            import_roots = iter_import_roots(data)
+            if data.get("type") == "root":
+                seed = "project_root"
+            else:
+                seed = data.get("id") if isinstance(data, dict) and data.get("id") else "project"
             bench_session_id = _next_bench_session_id(layout_model, f"project_{seed}")
-            if "type" in data:
+            for child in import_roots:
                 created_root_ids.append(
                     build(
-                        data,
+                        child,
                         workspace.id,
                         restore_ids=False,
                         bench_session_id=bench_session_id,
                     )
                 )
-            else:
-                for child in data.get("children", []):
-                    created_root_ids.append(
-                        build(
-                            child,
-                            workspace.id,
-                            restore_ids=False,
-                            bench_session_id=bench_session_id,
-                        )
-                    )
             layout_model.set_active_bench_session(bench_session_id)
         else:
             raise ValueError(f"Unsupported project load destination: {destination}")

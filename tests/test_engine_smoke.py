@@ -334,6 +334,7 @@ def status_strip_updates_focus_label():
     assert "SCENE: adapter/partial" in window.canvas_status_label.text()
     assert "MODE: source" in window.canvas_status_label.text()
     assert f"FOCUS: {button.id}" in window.canvas_status_label.text()
+    assert "WORKING: source truth" in window.canvas_status_label.text()
 
 
 def unified_scene_actions_exist():
@@ -342,10 +343,17 @@ def unified_scene_actions_exist():
         tmp_path = Path(tmp)
         project_path = tmp_path / "project.json"
         packet_path = tmp_path / "ui_extract_packet.json"
+        scanner_root = tmp_path / "scanner_repo"
+        (scanner_root / "ui" / "views").mkdir(parents=True)
+        (scanner_root / ".venv" / "bin").mkdir(parents=True)
         project_path.write_text(
             json.dumps({"version": "v1", "data": {"id": "root", "type": "root", "properties": {}, "children": []}}, indent=2),
             encoding="utf-8",
         )
+        (scanner_root / "ui" / "views" / "main_window.py").write_text("", encoding="utf-8")
+        (scanner_root / "ui" / "views" / "profile_manager.py").write_text("", encoding="utf-8")
+        (scanner_root / "ui" / "app.py").write_text("", encoding="utf-8")
+        (scanner_root / ".venv" / "bin" / "python").write_text("", encoding="utf-8")
         packet_path.write_text(
             json.dumps(
                 {
@@ -363,6 +371,7 @@ def unified_scene_actions_exist():
         )
         state.set_scene_source_target("project", str(project_path))
         state.set_scene_source_target("extract_packet", str(packet_path))
+        state.set_scene_source_target("scanner_repo", str(scanner_root))
         window = MainWindow(state)
         project_section = window.section_contents["Project"]
         save_group = project_section.findChild(QWidget, "project_save_group")
@@ -375,6 +384,7 @@ def unified_scene_actions_exist():
         export_group_title = project_section.findChild(QLabel, "project_export_group_title")
         save_target_label = project_section.findChild(QLabel, "save_target_label")
         selector = project_section.findChild(QComboBox, "scene_source_selector")
+        scanner_target_selector = project_section.findChild(QComboBox, "scanner_probe_target_selector")
         target_field = project_section.findChild(QLineEdit, "scene_source_target_field")
         hint_label = project_section.findChild(QLabel, "scene_action_hint_label")
         preflight_label = project_section.findChild(QLabel, "scene_source_preflight_label")
@@ -398,9 +408,14 @@ def unified_scene_actions_exist():
         assert save_target_label is not None
         assert save_target_label.text() == f"Save Target: {project_path}"
         assert selector is not None
-        assert selector.count() == 2
+        assert selector.count() == 3
         assert selector.itemText(0) == "Project JSON"
         assert selector.itemText(1) == "UI Extract Packet"
+        assert selector.itemText(2) == "Scanner Qt Probe"
+        assert scanner_target_selector is not None
+        assert scanner_target_selector.count() == 2
+        assert scanner_target_selector.itemText(0) == "Scanner Main Window"
+        assert scanner_target_selector.itemText(1) == "Scanner Profile Manager"
         assert target_field is not None
         assert target_field.text() == str(project_path)
         assert preflight_label is not None
@@ -426,6 +441,13 @@ def unified_scene_actions_exist():
         assert "Alongside: preserves the current scene" in hint_label.text()
         window.eventFilter(bench_button, QEvent(QEvent.Type.FocusIn))
         assert "Recommended: Bench preserves the current scene" in hint_label.text()
+        selector.setCurrentIndex(2)
+        APP.processEvents()
+        assert target_field.text() == str(scanner_root)
+        assert preflight_label.text() == "Preflight: valid scanner repo"
+        scanner_target_selector.setCurrentIndex(1)
+        APP.processEvents()
+        assert "incoming scanner profile manager" in context_label.text()
 
 
 def source_scene_defaults_to_bench_recommendation():
@@ -597,19 +619,35 @@ def scene_source_preflight_reflects_target_validity():
         )
         state.set_scene_source_target("project", str(project_path))
         state.set_scene_source_target("extract_packet", str(packet_path))
+        scanner_root = tmp_path / "scanner_repo"
+        (scanner_root / "ui" / "views").mkdir(parents=True)
+        (scanner_root / ".venv" / "bin").mkdir(parents=True)
+        (scanner_root / "ui" / "views" / "main_window.py").write_text("", encoding="utf-8")
+        (scanner_root / "ui" / "views" / "profile_manager.py").write_text("", encoding="utf-8")
+        (scanner_root / "ui" / "app.py").write_text("", encoding="utf-8")
+        (scanner_root / ".venv" / "bin" / "python").write_text("", encoding="utf-8")
+        state.set_scene_source_target("scanner_repo", str(scanner_root))
         window = MainWindow(state)
         project_section = window.section_contents["Project"]
         selector = project_section.findChild(QComboBox, "scene_source_selector")
+        scanner_target_selector = project_section.findChild(QComboBox, "scanner_probe_target_selector")
         preflight_label = project_section.findChild(QLabel, "scene_source_preflight_label")
         target_field = project_section.findChild(QLineEdit, "scene_source_target_field")
 
         assert selector is not None
+        assert scanner_target_selector is not None
         assert preflight_label is not None
         assert target_field is not None
         assert preflight_label.text() == "Preflight: valid project file"
         selector.setCurrentIndex(1)
         APP.processEvents()
         assert preflight_label.text() == "Preflight: valid extract packet"
+        selector.setCurrentIndex(2)
+        APP.processEvents()
+        assert preflight_label.text() == "Preflight: valid scanner repo"
+        scanner_target_selector.setCurrentIndex(1)
+        APP.processEvents()
+        assert preflight_label.text() == "Preflight: valid scanner repo"
         target_field.setText(str(tmp_path / "missing.json"))
         target_field.editingFinished.emit()
         assert preflight_label.text() == "Preflight: missing target"
@@ -637,6 +675,92 @@ def no_auto_reframe_on_interaction():
     assert during_camera == before_camera
 
 
+def escape_closes_selection_window():
+    state = AppState(str(CORE_SCHEMAS))
+    window = MainWindow(state)
+    window.show()
+    APP.processEvents()
+
+    assert window.selection_window.isVisible()
+    assert window.selection_window_close_shortcut.key().toString() == "Esc"
+
+    window.selection_window_close_shortcut.activated.emit()
+    APP.processEvents()
+
+    assert not window.selection_window.isVisible()
+    assert window.tool_workspace_window.isVisible()
+
+
+def escape_when_selection_window_closed_is_safe():
+    state = AppState(str(CORE_SCHEMAS))
+    window = MainWindow(state)
+    window.show()
+    APP.processEvents()
+
+    window.selection_window.close()
+    APP.processEvents()
+    assert not window.selection_window.isVisible()
+
+    window.selection_window_close_shortcut.activated.emit()
+    APP.processEvents()
+
+    assert not window.selection_window.isVisible()
+    assert window.tool_workspace_window.isVisible()
+
+
+def focus_canvas_surface_hotkey_works():
+    state = AppState(str(CORE_SCHEMAS))
+    window = MainWindow(state)
+    window.show()
+    APP.processEvents()
+
+    window.selection_window_focus_shortcut.activated.emit()
+    APP.processEvents()
+    window.canvas_focus_shortcut.activated.emit()
+    APP.processEvents()
+
+    assert window.canvas_focus_shortcut.key().toString() == "Ctrl+1"
+    assert window.canvas_panel.hasFocus()
+
+
+def focus_selection_window_hotkey_works():
+    state = AppState(str(CORE_SCHEMAS))
+    window = MainWindow(state)
+    window.show()
+    APP.processEvents()
+
+    window.selection_window.close()
+    APP.processEvents()
+    assert not window.selection_window.isVisible()
+
+    window.selection_window_focus_shortcut.activated.emit()
+    APP.processEvents()
+
+    assert window.selection_window_focus_shortcut.key().toString() == "Ctrl+2"
+    assert window.selection_window.isVisible()
+
+
+def focus_selection_window_hotkey_repositions_hidden_window():
+    state = AppState(str(CORE_SCHEMAS))
+    window = MainWindow(state)
+    window.show()
+    APP.processEvents()
+
+    window.selection_window.move(5, 5)
+    window.selection_window.close()
+    APP.processEvents()
+    assert not window.selection_window.isVisible()
+
+    window.selection_window_focus_shortcut.activated.emit()
+    APP.processEvents()
+
+    expected_x = window.frameGeometry().topLeft().x() + 210
+    expected_y = window.frameGeometry().topLeft().y() + 80
+    assert window.selection_window.isVisible()
+    assert window.selection_window.pos().x() == expected_x
+    assert window.selection_window.pos().y() == expected_y
+
+
 def run_all_tests():
     tests = [
         mixed_auto_and_free_layout,
@@ -659,6 +783,11 @@ def run_all_tests():
         scene_source_target_field_updates_app_state,
         scene_source_preflight_reflects_target_validity,
         no_auto_reframe_on_interaction,
+        escape_closes_selection_window,
+        escape_when_selection_window_closed_is_safe,
+        focus_canvas_surface_hotkey_works,
+        focus_selection_window_hotkey_works,
+        focus_selection_window_hotkey_repositions_hidden_window,
     ]
 
     passed = 0

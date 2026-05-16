@@ -146,10 +146,12 @@ def lock_toggle_behavior():
     lock_checkbox.setChecked(True)
     APP.processEvents()
 
+    # The inspector re-renders on model notification, so re-fetch fresh widgets.
     x_editor = inspector.findChild(QLineEdit, "field_editor_x")
     title_editor = inspector.findChild(QLineEdit, "field_editor_title")
+    assert button.properties["locked"] is True
     assert not x_editor.isEnabled()
-    assert title_editor.isEnabled()
+    assert not title_editor.isEnabled()
 
 
 def run_all_tests():
